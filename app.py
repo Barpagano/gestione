@@ -30,7 +30,7 @@ st.markdown("""
     .servito { color: #555555 !important; text-decoration: line-through; opacity: 0.6; font-style: italic; }
     .da-servire { color: #FFFFFF !important; font-weight: bold; font-size: 16px; }
     
-    /* IL TASTO CHIUDI TAVOLO (Sotto l'ordine) */
+    /* TASTO PAGATO E CHIUDI (Sotto l'ordine) */
     div.stButton > button[kind="primary"] {
         background-color: #D32F2F !important;
         color: white !important;
@@ -80,7 +80,7 @@ st_autorefresh(interval=5000, key="refresh_globale")
 menu_df = carica_menu()
 ordini_attuali = carica_ordini()
 
-# Gestione notifica sonora
+# Gestione notifica sonora per nuovi ordini
 if "ultimo_count" not in st.session_state: st.session_state.ultimo_count = len(ordini_attuali)
 if len(ordini_attuali) > st.session_state.ultimo_count:
     suona_notifica()
@@ -88,13 +88,13 @@ st.session_state.ultimo_count = len(ordini_attuali)
 
 st.markdown("<h1 style='text-align: center;'>☕ GESTIONE BAR PAGANO</h1>", unsafe_allow_html=True)
 
-# Tabs per organizzare il lavoro
+# Menu principale in Tab
 tab_ordini, tab_vetrina, tab_stock, tab_menu = st.tabs(["📋 ORDINI IN CORSO", "⚡ VETRINA", "📦 STOCK", "⚙️ MENU"])
 
-# --- TAB ORDINI (Dove c'è il tasto chiudi sotto ogni tavolo) ---
+# --- TAB 1: ORDINI IN CORSO ---
 with tab_ordini:
     if not ordini_attuali:
-        st.info("Nessun ordine presente.")
+        st.info("Nessun ordine presente al momento.")
     else:
         tavoli_attivi = sorted(list(set(str(o['tavolo']) for o in ordini_attuali)))
         cols = st.columns(3)
@@ -110,16 +110,16 @@ with tab_ordini:
                         totale_tavolo += float(r['prezzo'])
                         c_del, c_txt, c_ok = st.columns([0.5, 3, 1])
                         
-                        # X per eliminare riga singola
+                        # Tasto X per eliminare riga singola (errore)
                         if c_del.button("❌", key=f"del_{r['id_univoco']}"):
                             salva_ordini([o for o in ordini_attuali if o['id_univoco'] != r['id_univoco']])
                             st.rerun()
                             
-                        # Testo Prodotto
+                        # Testo Prodotto con orario
                         stile = "servito" if r['stato'] == "SI" else "da-servire"
                         c_txt.markdown(f"<span class='{stile}'>[{r.get('orario','')}] {r['prodotto']}</span>", unsafe_allow_html=True)
                         
-                        # OK per segnare come servito
+                        # Tasto Ok per segnare come servito al banco
                         if r['stato'] == "NO" and c_ok.button("Ok", key=f"ok_{r['id_univoco']}"):
                             for o in ordini_attuali:
                                 if o['id_univoco'] == r['id_univoco']: o['stato'] = "SI"
@@ -128,15 +128,15 @@ with tab_ordini:
                     st.divider()
                     st.write(f"**TOTALE CONTO: €{totale_tavolo:.2f}**")
                     
-                    # TASTO RICHIESTO: Chiusura tavolo sotto l'ordine
+                    # TASTO PAGATO E CHIUDI (Sotto l'ordine del tavolo)
                     if st.button(f"PAGATO E CHIUDI TAVOLO {t}", key=f"chiusura_{t}", type="primary"):
                         nuovi_ordini = [o for o in ordini_attuali if str(o['tavolo']) != str(t)]
                         salva_ordini(nuovi_ordini)
-                        st.toast(f"Tavolo {t} pagato e rimosso.")
+                        st.toast(f"Tavolo {t} pagato e rimosso correttamente.")
                         time.sleep(0.5)
                         st.rerun()
 
-# --- TAB VETRINA (Scalco rapido) ---
+# --- TAB 2: VETRINA (Sottrazione rapida stock) ---
 with tab_vetrina:
     stk = carica_stock()
     cv = st.columns(4)
@@ -144,7 +144,7 @@ with tab_vetrina:
         if cv[i % 4].button(f"{p}\n({q})", key=f"vtr_{p}", disabled=(q <= 0)):
             stk[p] = max(0, q - 1); salva_stock(stk); st.rerun()
 
-# --- TAB STOCK ---
+# --- TAB 3: GESTIONE STOCK ---
 with tab_stock:
     stk = carica_stock()
     for p, q in stk.items():
@@ -155,7 +155,7 @@ with tab_stock:
         if cp.button("➕", key=f"p_{p}"): stk[p] = q+1; salva_stock(stk); st.rerun()
         if cd.button("🗑️", key=f"d_{p}"): del stk[p]; salva_stock(stk); st.rerun()
 
-# --- TAB MENU ---
+# --- TAB 4: GESTIONE MENU (Prezzi e Prodotti) ---
 with tab_menu:
     with st.form("nuovo_prodotto"):
         c1, c2 = st.columns(2)
