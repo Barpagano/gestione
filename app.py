@@ -9,7 +9,7 @@ from streamlit_autorefresh import st_autorefresh
 
 # --- CONFIGURAZIONE PAGINA ---
 st.set_page_config(
-    page_title="BAR PAGANO - GESTIONE", 
+    page_title="BAR PAGANO - CONSOLE UNICA", 
     page_icon="☕", 
     layout="wide"
 )
@@ -19,24 +19,24 @@ st.markdown("""
     <style>
     .stApp { background-color: #0E1117; color: #FFFFFF; }
     
-    /* Pulsanti generali */
+    /* Stile pulsanti colonne */
     div[data-testid="column"] button {
         width: 100% !important;
         font-weight: bold !important;
         border-radius: 8px !important;
     }
     
-    /* Stile testo ordini */
+    /* Testo prodotti */
     .servito { color: #555555 !important; text-decoration: line-through; opacity: 0.6; font-style: italic; }
     .da-servire { color: #FFFFFF !important; font-weight: bold; font-size: 16px; }
     
-    /* TASTO PAGATO E CHIUDI (Sotto l'ordine) */
+    /* TASTO CASSA (Sotto l'ordine) */
     div.stButton > button[kind="primary"] {
         background-color: #D32F2F !important;
         color: white !important;
         border: 2px solid #FF5252 !important;
-        height: 55px !important;
-        font-size: 18px !important;
+        height: 60px !important;
+        font-size: 20px !important;
         margin-top: 15px !important;
     }
     </style>
@@ -75,29 +75,31 @@ def carica_stock():
     return df.set_index('prodotto')['quantita'].to_dict() if not df.empty else {}
 def salva_stock(d): pd.DataFrame(list(d.items()), columns=['prodotto', 'quantita']).to_csv(STOCK_FILE, index=False)
 
-# --- LOGICA CORE ---
-st_autorefresh(interval=5000, key="refresh_globale")
+# --- LOGICA OPERATIVA ---
+st_autorefresh(interval=5000, key="refresh_bancone")
 menu_df = carica_menu()
 ordini_attuali = carica_ordini()
 
-# Gestione notifica sonora per nuovi ordini
+# Notifica sonora nuovi ordini
 if "ultimo_count" not in st.session_state: st.session_state.ultimo_count = len(ordini_attuali)
 if len(ordini_attuali) > st.session_state.ultimo_count:
     suona_notifica()
 st.session_state.ultimo_count = len(ordini_attuali)
 
-st.markdown("<h1 style='text-align: center;'>☕ GESTIONE BAR PAGANO</h1>", unsafe_allow_html=True)
+st.title("👨‍🍳 CONSOLE BANCONE - BAR PAGANO")
 
-# Menu principale in Tab
-tab_ordini, tab_vetrina, tab_stock, tab_menu = st.tabs(["📋 ORDINI IN CORSO", "⚡ VETRINA", "📦 STOCK", "⚙️ MENU"])
+# Organizzazione in Tab
+tab_ordini, tab_vetrina, tab_stock, tab_menu = st.tabs([
+    "📋 ORDINI E PAGAMENTI", "⚡ VETRINA RAPIDA", "📦 STOCK", "⚙️ MODIFICA LISTINO"
+])
 
-# --- TAB 1: ORDINI IN CORSO ---
+# --- TAB 1: GESTIONE ORDINI E CASSA ---
 with tab_ordini:
     if not ordini_attuali:
-        st.info("Nessun ordine presente al momento.")
+        st.info("Nessun ordine attivo. In attesa di clienti...")
     else:
         tavoli_attivi = sorted(list(set(str(o['tavolo']) for o in ordini_attuali)))
-        cols = st.columns(3)
+        cols = st.columns(3) # Visualizzazione a 3 colonne per i tavoli
         
         for idx, t in enumerate(tavoli_attivi):
             with cols[idx % 3]:
@@ -110,33 +112,33 @@ with tab_ordini:
                         totale_tavolo += float(r['prezzo'])
                         c_del, c_txt, c_ok = st.columns([0.5, 3, 1])
                         
-                        # Tasto X per eliminare riga singola (errore)
+                        # X: Elimina riga (errore)
                         if c_del.button("❌", key=f"del_{r['id_univoco']}"):
                             salva_ordini([o for o in ordini_attuali if o['id_univoco'] != r['id_univoco']])
                             st.rerun()
                             
-                        # Testo Prodotto con orario
+                        # Prodotto
                         stile = "servito" if r['stato'] == "SI" else "da-servire"
                         c_txt.markdown(f"<span class='{stile}'>[{r.get('orario','')}] {r['prodotto']}</span>", unsafe_allow_html=True)
                         
-                        # Tasto Ok per segnare come servito al banco
+                        # Ok: Segna come servito
                         if r['stato'] == "NO" and c_ok.button("Ok", key=f"ok_{r['id_univoco']}"):
                             for o in ordini_attuali:
                                 if o['id_univoco'] == r['id_univoco']: o['stato'] = "SI"
                             salva_ordini(ordini_attuali); st.rerun()
                     
                     st.divider()
-                    st.write(f"**TOTALE CONTO: €{totale_tavolo:.2f}**")
+                    st.markdown(f"### Totale Conto: **€{totale_tavolo:.2f}**")
                     
-                    # TASTO PAGATO E CHIUDI (Sotto l'ordine del tavolo)
-                    if st.button(f"PAGATO E CHIUDI TAVOLO {t}", key=f"chiusura_{t}", type="primary"):
+                    # TASTO CASSA INTEGRATO
+                    if st.button(f"💰 PAGATO E CHIUDI TAVOLO {t}", key=f"cash_{t}", type="primary"):
                         nuovi_ordini = [o for o in ordini_attuali if str(o['tavolo']) != str(t)]
                         salva_ordini(nuovi_ordini)
-                        st.toast(f"Tavolo {t} pagato e rimosso correttamente.")
+                        st.toast(f"Tavolo {t} incassato e liberato!")
                         time.sleep(0.5)
                         st.rerun()
 
-# --- TAB 2: VETRINA (Sottrazione rapida stock) ---
+# --- TAB 2: VETRINA (Sottrazione veloce) ---
 with tab_vetrina:
     stk = carica_stock()
     cv = st.columns(4)
@@ -144,7 +146,7 @@ with tab_vetrina:
         if cv[i % 4].button(f"{p}\n({q})", key=f"vtr_{p}", disabled=(q <= 0)):
             stk[p] = max(0, q - 1); salva_stock(stk); st.rerun()
 
-# --- TAB 3: GESTIONE STOCK ---
+# --- TAB 3: GESTIONE QUANTITÀ STOCK ---
 with tab_stock:
     stk = carica_stock()
     for p, q in stk.items():
@@ -155,15 +157,15 @@ with tab_stock:
         if cp.button("➕", key=f"p_{p}"): stk[p] = q+1; salva_stock(stk); st.rerun()
         if cd.button("🗑️", key=f"d_{p}"): del stk[p]; salva_stock(stk); st.rerun()
 
-# --- TAB 4: GESTIONE MENU (Prezzi e Prodotti) ---
+# --- TAB 4: MODIFICA LISTINO (Aggiunta prodotti) ---
 with tab_menu:
-    with st.form("nuovo_prodotto"):
+    with st.form("new_item"):
         c1, c2 = st.columns(2)
-        cat_e = c1.selectbox("Categoria Esistente", ["---"] + sorted(list(menu_df['categoria'].unique())) if not menu_df.empty else ["---"])
-        cat_n = c2.text_input("Nuova Categoria")
-        nome_n = st.text_input("Nome Prodotto")
-        prez_n = st.number_input("Prezzo €", min_value=0.0, step=0.1)
-        if st.form_submit_button("AGGIUNGI AL LISTINO"):
+        cat_e = c1.selectbox("Categoria", ["---"] + sorted(list(menu_df['categoria'].unique())) if not menu_df.empty else ["---"])
+        cat_n = c2.text_input("O nuova categoria")
+        nome_n = st.text_input("Prodotto")
+        prez_n = st.number_input("Prezzo (€)", min_value=0.0, step=0.1)
+        if st.form_submit_button("SALVA NEL MENU"):
             cat_f = cat_n if cat_n.strip() != "" else cat_e
             if cat_f != "---" and nome_n:
                 nuovo = pd.DataFrame([{"categoria": cat_f, "prodotto": nome_n, "prezzo": prez_n}])
