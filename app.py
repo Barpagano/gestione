@@ -1,6 +1,3 @@
-Capito, vuoi che la Vetrina funga da strumento per scalare velocemente lo stock (ad esempio quando vendi un cornetto direttamente al banco) invece di aumentarlo.
-Ho modificato la logica nel tab_vetrina: ora, quando clicchi sul pulsante del prodotto, la quantità viene diminuita di 1 (fino a un minimo di 0).
-Ecco il codice completo aggiornato:
 import streamlit as st
 import pandas as pd
 import os
@@ -248,5 +245,6 @@ else:
                             st.rerun()
                     else:
                         cp2.markdown("<span class='esaurito-label'>ESAURITO</span>", unsafe_allow_html=True)
+
 
 
