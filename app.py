@@ -10,43 +10,38 @@ from streamlit_autorefresh import st_autorefresh
 # --- CONFIGURAZIONE PAGINA ---
 st.set_page_config(page_title="BAR PAGANO", page_icon="☕", layout="wide")
 
-# --- CSS PERSONALIZZATO (DARK MODE & GRID COMPATTA) ---
+# --- CSS PERSONALIZZATO (GRIGLIA COMPATTA 5 COLONNE) ---
 st.markdown("""
     <style>
     /* Dark Mode Totale */
     .stApp { background-color: #000000; color: #FFFFFF; }
     
-    /* Rimuove i margini standard di Streamlit per avvicinare i tasti */
-    [data-testid="column"] { 
-        padding: 1px !important; 
-        margin: 0px !important;
+    /* Forza i contenitori delle colonne a stare vicini */
+    [data-testid="stHorizontalBlock"] {
+        gap: 2px !important; /* Spazio minimo tra le colonne */
     }
     
-    /* Contenitore Flex per i tavoli (li mette vicini) */
-    .tavoli-container {
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: center;
-        gap: 5px; /* Spazio minimo tra i tasti */
-        padding: 10px;
+    [data-testid="column"] {
+        padding: 0px !important;
+        margin: 0px !important;
     }
 
-    /* STILE BASE TASTI TAVOLI */
+    /* STILE TASTI TAVOLI */
     .stButton > button {
         width: 100% !important;
-        height: 80px !important;
-        border-radius: 8px !important;
+        height: 70px !important;
+        border-radius: 4px !important;
         font-weight: 900 !important;
-        font-size: 24px !important;
-        border: none !important;
-        transition: 0.3s;
+        font-size: 22px !important;
+        border: 1px solid #333333 !important;
+        transition: 0.2s;
+        margin: 0px !important;
     }
 
     /* TAVOLO LIBERO: Verde Fluo / Testo Nero */
     .btn-libero div[data-testid="stButton"] > button {
         background-color: #00FF00 !important;
         color: #000000 !important;
-        box-shadow: inset 0px 0px 10px rgba(0,0,0,0.5);
     }
 
     /* TAVOLO OCCUPATO: Rosso / Testo Bianco */
@@ -56,11 +51,8 @@ st.markdown("""
         opacity: 1 !important;
     }
 
-    /* CATEGORIE MENU */
-    div[data-testid="stMarkdownContainer"] h3 { color: #00FF00; }
-    
-    /* Logo Centrato */
-    .logo-img { display: block; margin-left: auto; margin-right: auto; width: 150px; }
+    /* Logo e Intestazioni */
+    .logo-text { text-align: center; color: #00FF00; font-weight: bold; font-size: 40px; margin-bottom: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -71,7 +63,6 @@ def get_ora_italiana():
 
 # --- GESTIONE DATABASE ---
 DB_FILE = "ordini_bar_pagano.csv"
-STOCK_FILE = "stock_bar_pagano.csv"
 MENU_FILE = "menu_personalizzato.csv"
 COLONNE_ORDINI = ["id_univoco", "tavolo", "prodotto", "prezzo", "stato", "orario"]
 
@@ -81,7 +72,6 @@ def inizializza_file(file, colonne):
 
 inizializza_file(DB_FILE, COLONNE_ORDINI)
 inizializza_file(MENU_FILE, ["categoria", "prodotto", "prezzo"])
-inizializza_file(STOCK_FILE, ["prodotto", "quantita"])
 
 def carica_menu(): return pd.read_csv(MENU_FILE)
 def carica_ordini(): 
@@ -96,102 +86,102 @@ ordini_attuali = carica_ordini()
 st_autorefresh(interval=5000, key="global_refresh")
 ruolo = st.query_params.get("ruolo", "cliente")
 
-# --- LOGO ---
+# --- LOGO / TITOLO ---
 if os.path.exists("logo.png"):
-    st.image("logo.png", width=180)
+    st.image("logo.png", width=200)
 else:
-    st.markdown("<h1 style='text-align: center; color: #00FF00;'>BAR PAGANO</h1>", unsafe_allow_html=True)
+    st.markdown("<div class='logo-text'>BAR PAGANO</div>", unsafe_allow_html=True)
 
 # =========================================================
-# SCHERMATA GESTIONE (BANCO)
+# BANCONE (RUOLO=BANCO)
 # =========================================================
 if ruolo == "banco":
-    tab_ordini, tab_vetrina, tab_stock, tab_menu = st.tabs(["📋 ORDINI", "⚡ VETRINA", "📦 STOCK", "⚙️ MENU"])
-    
-    with tab_ordini:
-        if not ordini_attuali: st.info("Nessun ordine attivo")
-        else:
-            tavoli_attivi = sorted(list(set(str(o['tavolo']) for o in ordini_attuali)))
-            cols = st.columns(3)
-            for idx, t in enumerate(tavoli_attivi):
-                with cols[idx % 3]:
-                    with st.container(border=True):
-                        st.markdown(f"### 🪑 Tavolo {t}")
-                        items = [o for o in ordini_attuali if str(o['tavolo']) == str(t)]
-                        tot = sum(float(o['prezzo']) for o in items)
-                        for r in items:
-                            cl = "text-decoration: line-through; color: gray;" if r['stato'] == "SI" else "color: white; font-weight: bold;"
-                            c1, c2 = st.columns([3, 1])
-                            c1.markdown(f"<span style='{cl}'>{r['prodotto']}</span>", unsafe_allow_html=True)
-                            if r['stato'] == "NO" and c2.button("Ok", key=f"ok_{r['id_univoco']}"):
-                                for o in ordini_attuali: 
-                                    if o['id_univoco'] == r['id_univoco']: o['stato'] = "SI"
-                                salva_ordini(ordini_attuali); st.rerun()
-                        st.write(f"**Totale: €{tot:.2f}**")
-                        if st.button(f"PAGATO E CHIUDI", key=f"pay_{t}"):
-                            salva_ordini([o for o in ordini_attuali if str(o['tavolo']) != str(t)]); st.rerun()
+    st.subheader("Gestione Ordini")
+    if not ordini_attuali: st.info("In attesa di ordini...")
+    else:
+        tavoli_attivi = sorted(list(set(str(o['tavolo']) for o in ordini_attuali)))
+        cols = st.columns(3)
+        for idx, t in enumerate(tavoli_attivi):
+            with cols[idx % 3]:
+                with st.container(border=True):
+                    st.markdown(f"### 🪑 Tavolo {t}")
+                    items = [o for o in ordini_attuali if str(o['tavolo']) == str(t)]
+                    tot = sum(float(o['prezzo']) for o in items)
+                    for r in items:
+                        cl = "text-decoration: line-through; color: gray;" if r['stato'] == "SI" else "color: white;"
+                        c1, c2 = st.columns([4, 1])
+                        c1.markdown(f"<span style='{cl}'>{r['prodotto']}</span>", unsafe_allow_html=True)
+                        if r['stato'] == "NO" and c2.button("Ok", key=f"ok_{r['id_univoco']}"):
+                            for o in ordini_attuali: 
+                                if o['id_univoco'] == r['id_univoco']: o['stato'] = "SI"
+                            salva_ordini(ordini_attuali); st.rerun()
+                    st.write(f"**Totale: €{tot:.2f}**")
+                    if st.button(f"CHIUDI TAVOLO", key=f"pay_{t}", type="primary"):
+                        salva_ordini([o for o in ordini_attuali if str(o['tavolo']) != str(t)]); st.rerun()
 
 # =========================================================
-# SCHERMATA CLIENTE (OTTIMIZZATA MOBILE)
+# CLIENTE (FILA DA 5 TASTI)
 # =========================================================
 else:
     if 'tavolo' not in st.session_state: st.session_state.tavolo = None
     if 'carrello' not in st.session_state: st.session_state.carrello = []
 
     if st.session_state.tavolo is None:
-        st.markdown("<h3 style='text-align: center;'>SELEZIONA TAVOLO</h3>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center;'>SELEZIONA TAVOLO</p>", unsafe_allow_html=True)
         tavoli_occupati = set(str(o['tavolo']) for o in ordini_attuali)
         
-        # Griglia compatta 3 colonne
-        for i in range(0, 15, 3):
-            cols = st.columns(3)
-            for j in range(3):
+        # LOGICA FILA DA 5
+        for i in range(0, 15, 5):
+            cols = st.columns(5) # Forza 5 colonne
+            for j in range(5):
                 n = i + j + 1
                 if n <= 15:
                     t_str = str(n)
-                    if t_str in tavoli_occupati:
-                        st.markdown('<div class="btn-occupato">', unsafe_allow_html=True)
-                        cols[j].button(f"{n}\nOCC", key=f"t_{n}", disabled=True)
-                        st.markdown('</div>', unsafe_allow_html=True)
-                    else:
-                        st.markdown('<div class="btn-libero">', unsafe_allow_html=True)
-                        if cols[j].button(f"{n}", key=f"t_{n}"):
+                    is_occ = t_str in tavoli_occupati
+                    classe = "btn-occupato" if is_occ else "btn-libero"
+                    
+                    with cols[j]:
+                        st.markdown(f'<div class="{classe}">', unsafe_allow_html=True)
+                        if st.button(f"{n}", key=f"t_{n}", disabled=is_occ):
                             st.session_state.tavolo = t_str
                             st.rerun()
                         st.markdown('</div>', unsafe_allow_html=True)
     else:
-        # Intestazione Tavolo Selezionato
-        st.markdown(f"<div style='background-color: #00FF00; color: black; text-align: center; padding: 10px; border-radius: 5px; font-weight: bold; margin-bottom: 20px;'>ORDINANDO AL TAVOLO {st.session_state.tavolo}</div>", unsafe_allow_html=True)
-        if st.button("⬅️ CAMBIA TAVOLO", use_container_width=True): st.session_state.tavolo = None; st.rerun()
+        # MENU ORDINAZIONE
+        st.markdown(f"<h2 style='text-align:center; color:#00FF00;'>TAVOLO {st.session_state.tavolo}</h2>", unsafe_allow_html=True)
+        if st.button("⬅️ CAMBIA TAVOLO", use_container_width=True):
+            st.session_state.tavolo = None
+            st.rerun()
         
         if not menu_df.empty:
             categorie = sorted(menu_df['categoria'].unique())
-            scelta = st.pills("Categorie:", categorie) if hasattr(st, "pills") else st.radio("Menu:", categorie, horizontal=True)
+            scelta = st.radio("Scegli:", categorie, horizontal=True)
+            st.divider()
             
-            st.markdown("---")
-            prodotti = menu_df[menu_df['categoria'] == scelta] if scelta else menu_df
+            prodotti = menu_df[menu_df['categoria'] == scelta]
             for _, r in prodotti.iterrows():
                 c1, c2 = st.columns([3, 1])
-                c1.markdown(f"**{r['prodotto']}**\n\n€{r['prezzo']:.2f}")
+                c1.write(f"**{r['prodotto']}** - €{r['prezzo']:.2f}")
                 if c2.button("➕", key=f"add_{r['prodotto']}"):
                     item = r.to_dict(); item['temp_id'] = time.time()
                     st.session_state.carrello.append(item); st.rerun()
 
         if st.session_state.carrello:
-            st.markdown("<div style='background-color: #1E1E1E; padding: 15px; border-radius: 10px; border: 1px solid #00FF00;'>", unsafe_allow_html=True)
+            st.markdown("---")
             st.subheader("🛒 CARRELLO")
-            tot = 0
+            tot = sum(item['prezzo'] for item in st.session_state.carrello)
             for i, item in enumerate(st.session_state.carrello):
-                tot += item['prezzo']
-                col_n, col_e = st.columns([4, 1])
-                col_n.write(f"{item['prodotto']} (€{item['prezzo']:.2f})")
-                if col_e.button("❌", key=f"rm_{i}"):
+                c_n, c_e = st.columns([4, 1])
+                c_n.write(f"{item['prodotto']} (€{item['prezzo']:.2f})")
+                if c_e.button("❌", key=f"rm_{i}"):
                     st.session_state.carrello.pop(i); st.rerun()
             
-            st.markdown(f"### TOTALE: €{tot:.2f}")
+            st.write(f"### TOTALE: €{tot:.2f}")
             if st.button("🚀 INVIA ORDINE", type="primary", use_container_width=True):
                 ora = get_ora_italiana()
                 for item in st.session_state.carrello:
                     ordini_attuali.append({"id_univoco": f"{time.time()}_{item['prodotto']}", "tavolo": st.session_state.tavolo, "prodotto": item['prodotto'], "prezzo": item['prezzo'], "stato": "NO", "orario": ora})
-                salva_ordini(ordini_attuali); st.session_state.carrello = []; st.success("Ordine Inviato!"); time.sleep(1); st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
+                salva_ordini(ordini_attuali)
+                st.session_state.carrello = []
+                st.success("Ordine Inviato!")
+                time.sleep(1); st.rerun()
