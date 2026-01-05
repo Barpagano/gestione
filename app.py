@@ -21,8 +21,8 @@ st.markdown("""
     }
     .servito { color: #555555 !important; text-decoration: line-through; opacity: 0.6; }
     .da-servire { color: #FFFFFF !important; font-weight: bold; }
-    /* Rosso per tasto elimina */
-    .stButton button[key*="del_prod_"] { background-color: #ff4b4b !important; color: white !important; }
+    /* Pulsante annulla ordine cliente */
+    .btn-annulla { background-color: #ff4b4b !important; color: white !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -100,10 +100,6 @@ if admin_mode:
 
     with tab_stock:
         stk = carica_stock()
-        with st.expander("Aggiungi prodotto da monitorare"):
-            p_sel = st.selectbox("Scegli dal menu", menu_df['prodotto'].unique()) if not menu_df.empty else None
-            if st.button("AGGIUNGI A STOCK") and p_sel:
-                stk[p_sel] = 0; salva_stock(stk); st.rerun()
         for p, q in stk.items():
             c1, c2, c3, c4 = st.columns([3, 1, 1, 1])
             c1.write(f"**{p}**")
@@ -112,37 +108,19 @@ if admin_mode:
             if c4.button("➕", key=f"p_{p}"): stk[p]=q+1; salva_stock(stk); st.rerun()
 
     with tab_menu:
-        st.subheader("➕ Aggiungi al Listino")
+        st.subheader("➕ Aggiungi")
         with st.form("new_prod"):
             c1, c2, c3 = st.columns(3)
-            f_cat = c1.text_input("Categoria (es: VETRINA)")
-            f_prod = c2.text_input("Nome Prodotto")
-            f_prez = c3.number_input("Prezzo (€)", step=0.1)
+            f_cat, f_prod, f_prez = c1.text_input("Categoria"), c2.text_input("Nome"), c3.number_input("Prezzo (€)", step=0.1)
             if st.form_submit_button("AGGIUNGI"):
                 nuovo = pd.DataFrame([{"categoria": f_cat.upper(), "prodotto": f_prod, "prezzo": f_prez}])
                 pd.concat([menu_df, nuovo]).to_csv(MENU_FILE, index=False); st.rerun()
-        
         st.divider()
-        st.subheader("🗑️ Modifica / Elimina dal Menu")
-        if menu_df.empty: st.info("Menu vuoto.")
-        else:
-            # Mostriamo il menu riga per riga con tasto elimina funzionante
-            for i, r in menu_df.iterrows():
-                mc1, mc2, mc3, mc4 = st.columns([2, 3, 1, 1])
-                mc1.write(f"*{r['categoria']}*")
-                mc2.write(f"**{r['prodotto']}**")
-                mc3.write(f"€{r['prezzo']:.2f}")
-                # Il trucco è usare un ID unico basato sull'indice della riga
-                if mc4.button("🗑️", key=f"del_prod_{i}"):
-                    # Rimuoviamo la riga specifica
-                    df_aggiornato = menu_df.drop(i)
-                    df_aggiornato.to_csv(MENU_FILE, index=False)
-                    # Pulizia automatica dallo stock se presente
-                    stk = carica_stock()
-                    if r['prodotto'] in stk:
-                        del stk[r['prodotto']]
-                        salva_stock(stk)
-                    st.rerun()
+        for i, r in menu_df.iterrows():
+            mc1, mc2, mc3, mc4 = st.columns([2, 3, 1, 1])
+            mc1.write(r['categoria']); mc2.write(r['prodotto']); mc3.write(f"€{r['prezzo']:.2f}")
+            if mc4.button("🗑️", key=f"del_prod_{i}"):
+                menu_df.drop(i).to_csv(MENU_FILE, index=False); st.rerun()
 
 # ==========================================
 # SEZIONE CLIENTE
@@ -150,11 +128,29 @@ if admin_mode:
 else:
     st.markdown("<h1 style='text-align:center;'>🥐 PAGANOCAFE</h1>", unsafe_allow_html=True)
     tavolo_sel = st.selectbox("Seleziona Tavolo:", ["---"] + [str(i) for i in range(1, 21)])
+    
     if tavolo_sel != "---":
-        if menu_df.empty: st.warning("Menu in caricamento...")
-        else:
+        stk = carica_stock()
+        # --- TABELLA ORDINI ATTIVI DEL CLIENTE (ANNULLAMENTO) ---
+        miei_ordini = [o for o in ordini_attuali if str(o['tavolo']) == tavolo_sel and o['stato'] == "NO"]
+        if miei_ordini:
+            with st.expander("🛒 I tuoi ordini in preparazione (Tocca ❌ per annullare)", expanded=True):
+                for mo in miei_ordini:
+                    cx1, cx2 = st.columns([4, 1])
+                    cx1.write(f"{mo['prodotto']} (€{mo['prezzo']:.2f})")
+                    if cx2.button("❌", key=f"annulla_{mo['id_univoco']}"):
+                        # 1. Ripristino Stock se monitorato
+                        if mo['prodotto'] in stk:
+                            stk[mo['prodotto']] += 1
+                            salva_stock(stk)
+                        # 2. Rimuovo l'ordine
+                        nuovi_ordini = [o for o in ordini_attuali if o['id_univoco'] != mo['id_univoco']]
+                        salva_ordini(nuovi_ordini)
+                        st.rerun()
+
+        # --- SELEZIONE PRODOTTI ---
+        if not menu_df.empty:
             scelta = st.radio("Scegli:", menu_df['categoria'].unique(), horizontal=True)
-            stk = carica_stock()
             for _, r in menu_df[menu_df['categoria'] == scelta].iterrows():
                 c1, c2 = st.columns([3, 1])
                 q = stk.get(r['prodotto'], 999)
@@ -164,5 +160,5 @@ else:
                         if r['prodotto'] in stk: stk[r['prodotto']] -= 1; salva_stock(stk)
                         nuovo = {"id_univoco": str(time.time()), "tavolo": tavolo_sel, "prodotto": r['prodotto'], "prezzo": r['prezzo'], "stato": "NO", "orario": datetime.now(pytz.timezone('Europe/Rome')).strftime("%H:%M")}
                         ordini_attuali.append(nuovo); salva_ordini(ordini_attuali)
-                        st.success("Inviato!"); time.sleep(0.5); st.rerun()
+                        st.rerun()
                 else: c2.error("FINITO")
