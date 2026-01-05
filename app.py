@@ -200,7 +200,10 @@ else:
                     cc1, cc2 = st.columns([4, 1])
                     cc1.write(f"{it['prodotto']} - €{it['prezzo']:.2f}")
                     if cc2.button("X", key=f"rc_{idx}"):
-                        if it['prodotto'] in stk: stk[it['prodotto']] += 1; salva_stock(stk)
+                        # Correzione sicurezza stock
+                        if it['prodotto'] in stk: 
+                            stk[it['prodotto']] += 1
+                            salva_stock(stk)
                         st.session_state.carrello.pop(idx); st.rerun()
                 if st.button("🚀 INVIA ORDINE AL BAR", type="primary", use_container_width=True):
                     nuovi = ordini_attuali.copy()
@@ -213,17 +216,17 @@ else:
             for _, r in menu_df[menu_df['categoria'] == cat_sel].iterrows():
                 with st.container(border=True):
                     cp1, cp2 = st.columns([3, 1])
-                    # Determiniamo se il prodotto è disponibile
                     q = stk.get(r['prodotto'], 999) if r['categoria'] == 'BRIOCHE&CORNETTI' else 999
-                    
                     cp1.write(f"**{r['prodotto']}** - €{r['prezzo']:.2f}")
                     
-                    # LOGICA BLOCCO TASTO AGGIUNGI
                     if q > 0:
                         if cp2.button("AGGIUNGI", key=f"add_{r['prodotto']}", use_container_width=True):
                             st.session_state.carrello.append({"prodotto": r['prodotto'], "prezzo": r['prezzo']})
-                            if r['categoria'] == 'BRIOCHE&CORNETTI': stk[r['prodotto']] -= 1; salva_stock(stk)
+                            if r['categoria'] == 'BRIOCHE&CORNETTI':
+                                # CORREZIONE: Inizializza se assente prima di scalare
+                                if r['prodotto'] not in stk: stk[r['prodotto']] = 0
+                                stk[r['prodotto']] = max(0, stk[r['prodotto']] - 1)
+                                salva_stock(stk)
                             st.rerun()
                     else:
-                        # Se lo stock è 0, mostriamo solo il testo "ESAURITO"
                         cp2.markdown("<span class='esaurito-label'>ESAURITO</span>", unsafe_allow_html=True)
