@@ -8,53 +8,38 @@ import streamlit.components.v1 as components
 from streamlit_autorefresh import st_autorefresh
 
 # --- CONFIGURAZIONE PAGINA ---
-st.set_page_config(
-    page_title="BAR PAGANO - GESTIONE", 
-    page_icon="☕", 
-    layout="wide"
-)
+st.set_page_config(page_title="BAR PAGANO", page_icon="☕", layout="wide")
 
-# --- CSS PERSONALIZZATO (Ottimizzato per Smartphone) ---
+# --- CSS PERSONALIZZATO ---
 st.markdown("""
     <style>
     .stApp { background-color: #0E1117; color: #FFFFFF; }
-    
-    /* Bottoni Generali */
-    div[data-testid="column"] button {
-        width: 100% !important;
-        font-weight: bold !important;
-        border-radius: 12px !important;
-    }
+    div[data-testid="column"] button { width: 100% !important; font-weight: bold !important; border-radius: 12px !important; }
 
-    /* TASTI TAVOLI CLIENTE (Contrasto elevato per mobile) */
-    .btn-tavolo > div[data-testid="stButton"] > button {
-        background-color: #E0E0E0 !important; /* Grigio chiaro */
-        color: #000000 !important;           /* Testo Nero */
+    /* TASTO LIBERO (Verde con scritta bianca) */
+    .btn-libero > div[data-testid="stButton"] > button {
+        background-color: #2E7D32 !important;
+        color: white !important;
         height: 80px !important;
         font-size: 24px !important;
-        border: 3px solid #4CAF50 !important; /* Bordo verde per stacco */
-        margin-bottom: 10px;
+        border: 2px solid #4CAF50 !important;
+    }
+
+    /* TASTO OCCUPATO (Rosso con scritta nera) */
+    .btn-occupato > div[data-testid="stButton"] > button {
+        background-color: #D32F2F !important;
+        color: #000000 !important;
+        height: 80px !important;
+        font-size: 24px !important;
+        border: 2px solid #FF5252 !important;
+        opacity: 1 !important;
     }
     
-    /* Stile Ordini nel Banco */
     .servito { color: #555555 !important; text-decoration: line-through; opacity: 0.6; font-style: italic; }
     .da-servire { color: #FFFFFF !important; font-weight: bold; font-size: 16px; }
     
-    /* TASTO CHIUDI TAVOLO (BANCO) */
-    div.stButton > button[kind="primary"] {
-        background-color: #D32F2F !important;
-        color: white !important;
-        height: 60px !important;
-        margin-top: 10px;
-    }
-
-    /* Tasto elimina nel carrello cliente */
-    .btn-del-cart > div[data-testid="stButton"] > button {
-        background-color: transparent !important;
-        color: #FF5252 !important;
-        border: 1px solid #FF5252 !important;
-        font-size: 16px !important;
-    }
+    /* Tasto Chiudi Tavolo Banco */
+    div.stButton > button[kind="primary"] { background-color: #D32F2F !important; color: white !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -96,11 +81,6 @@ ordini_attuali = carica_ordini()
 
 # --- REFRESH ---
 st_autorefresh(interval=5000, key="global_refresh")
-if "ultimo_count" not in st.session_state: st.session_state.ultimo_count = len(ordini_attuali)
-if len(ordini_attuali) > st.session_state.ultimo_count:
-    suona_notifica()
-st.session_state.ultimo_count = len(ordini_attuali)
-
 ruolo = st.query_params.get("ruolo", "cliente")
 
 # =========================================================
@@ -131,7 +111,7 @@ if ruolo == "banco":
                                 salva_ordini(ordini_attuali); st.rerun()
                         st.divider()
                         st.write(f"**Totale: €{tot:.2f}**")
-                        if st.button(f"CHIUDI TAVOLO E PAGA", key=f"chiudi_{t}", type="primary"):
+                        if st.button(f"PAGATO E CHIUDI {t}", key=f"chiudi_{t}", type="primary"):
                             salva_ordini([o for o in ordini_attuali if str(o['tavolo']) != str(t)]); st.rerun()
 
     with tab_vetrina:
@@ -163,7 +143,7 @@ if ruolo == "banco":
                     pd.concat([menu_df, pd.DataFrame([{"categoria": cat_f, "prodotto": nome_n, "prezzo": prez_n}])], ignore_index=True).to_csv(MENU_FILE, index=False); st.rerun()
 
 # =========================================================
-# CLIENTE (STILE TAVOLI CHIARI PER MOBILE)
+# CLIENTE
 # =========================================================
 else:
     st.title("☕ BAR PAGANO")
@@ -172,15 +152,23 @@ else:
 
     if st.session_state.tavolo is None:
         st.subheader("Scegli il tuo Tavolo:")
-        # Griglia 3x5 per smartphone per rendere i tasti più grandi
+        # Identifica tavoli con ordini attivi
+        tavoli_occupati = set(str(o['tavolo']) for o in ordini_attuali)
+        
         for i in range(0, 15, 3):
             cols = st.columns(3)
             for j in range(3):
                 n = i + j + 1
                 if n <= 15:
-                    st.markdown('<div class="btn-tavolo">', unsafe_allow_html=True)
-                    if cols[j].button(f"{n}", key=f"t_{n}"):
-                        st.session_state.tavolo = str(n); st.rerun()
+                    t_str = str(n)
+                    is_occupato = t_str in tavoli_occupati
+                    classe = "btn-occupato" if is_occupato else "btn-libero"
+                    label = f"{n} (OCCUPATO)" if is_occupato else f"{n}"
+                    
+                    st.markdown(f'<div class="{classe}">', unsafe_allow_html=True)
+                    if cols[j].button(label, key=f"t_{n}", disabled=is_occupato):
+                        st.session_state.tavolo = t_str
+                        st.rerun()
                     st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.success(f"📍 Tavolo {st.session_state.tavolo}")
@@ -198,15 +186,12 @@ else:
         if st.session_state.carrello:
             st.divider()
             st.subheader("🛒 Tuo Ordine:")
-            tot = 0
+            tot = sum(item['prezzo'] for item in st.session_state.carrello)
             for i, item in enumerate(st.session_state.carrello):
-                tot += item['prezzo']
                 col_n, col_e = st.columns([4, 1])
                 col_n.write(f"{item['prodotto']} (€{item['prezzo']:.2f})")
-                st.markdown('<div class="btn-del-cart">', unsafe_allow_html=True)
-                if col_e.button("❌", key=f"rm_{i}_{item['temp_id']}"):
+                if col_e.button("❌", key=f"rm_{i}"):
                     st.session_state.carrello.pop(i); st.rerun()
-                st.markdown('</div>', unsafe_allow_html=True)
             
             st.write(f"### Totale: €{tot:.2f}")
             if st.button(f"🚀 INVIA ORDINE", type="primary", use_container_width=True):
