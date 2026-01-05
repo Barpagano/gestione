@@ -23,13 +23,9 @@ st.markdown("""
     .tavolo-card {
         background-color: #1E2127; padding: 15px; border-radius: 12px; border: 1px solid #333; margin-bottom: 15px;
     }
-    /* Stile specifico per i bottoni dei tavoli */
-    .stButton > button.tavolo-btn {
-        height: 60px !important;
-        font-size: 20px !important;
-        background-color: #1E2127 !important;
-        color: white !important;
-        border: 1px solid #d4af37 !important;
+    .esaurito-label {
+        color: #FF4B4B; font-weight: bold; text-align: center; border: 1px solid #FF4B4B;
+        padding: 5px; border-radius: 8px; display: block;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -66,7 +62,6 @@ menu_df = carica_menu()
 ordini_attuali = carica_ordini()
 admin_mode = st.query_params.get("admin") == "si"
 
-# Inizializzazione session_state
 if "carrello" not in st.session_state: st.session_state.carrello = []
 if "nuove_categorie" not in st.session_state: st.session_state.nuove_categorie = []
 if "tavolo_selezionato" not in st.session_state: st.session_state.tavolo_selezionato = None
@@ -80,7 +75,7 @@ with c2:
     st.title(f"PAGANOCAFE - {'GESTIONE' if admin_mode else 'ORDINA'}")
 
 # ==========================================
-# SEZIONE BANCONE (ADMIN) - INVARIATA
+# SEZIONE BANCONE (ADMIN)
 # ==========================================
 if admin_mode:
     tab_ordini, tab_cassa, tab_vetrina, tab_stock, tab_menu = st.tabs(["📋 ORDINI", "💰 CASSA", "⚡ VETRINA", "📦 STOCK", "⚙️ MENU"])
@@ -176,13 +171,11 @@ if admin_mode:
                     if c3.button("Elimina", key=f"ep_{i}"): salva_menu(menu_df.drop(i)); st.rerun()
 
 # ==========================================
-# SEZIONE CLIENTE (MODIFICATA)
+# SEZIONE CLIENTE
 # ==========================================
 else:
-    # Se il tavolo non è selezionato, mostra la griglia
     if st.session_state.tavolo_selezionato is None:
         st.markdown("<h3 style='text-align:center;'>SELEZIONA IL TUO TAVOLO</h3>", unsafe_allow_html=True)
-        # Creiamo una griglia 4x5 per 20 tavoli
         for riga in range(5):
             cols = st.columns(4)
             for colonna in range(4):
@@ -191,7 +184,6 @@ else:
                     st.session_state.tavolo_selezionato = str(numero_tavolo)
                     st.rerun()
     
-    # Se il tavolo è selezionato, mostra il menu
     else:
         c1, c2 = st.columns([4, 1])
         c1.markdown(f"## 🪑 TAVOLO {st.session_state.tavolo_selezionato}")
@@ -201,7 +193,6 @@ else:
 
         stk = carica_stock()
         
-        # --- CARRELLO ---
         if st.session_state.carrello:
             with st.container(border=True):
                 st.subheader("🛒 Il tuo Ordine")
@@ -217,17 +208,22 @@ else:
                         nuovi.append({"id_univoco": str(time.time())+it['prodotto'], "tavolo": st.session_state.tavolo_selezionato, "prodotto": it['prodotto'], "prezzo": it['prezzo'], "stato": "NO", "orario": datetime.now().strftime("%H:%M")})
                     salva_ordini(nuovi); st.session_state.carrello = []; st.success("Ordine Inviato!"); time.sleep(1); st.rerun()
 
-        # --- LISTINO ---
         if not menu_df.empty:
             cat_sel = st.radio("COSA DESIDERI?", menu_df['categoria'].unique(), horizontal=True)
             for _, r in menu_df[menu_df['categoria'] == cat_sel].iterrows():
                 with st.container(border=True):
                     cp1, cp2 = st.columns([3, 1])
+                    # Determiniamo se il prodotto è disponibile
                     q = stk.get(r['prodotto'], 999) if r['categoria'] == 'BRIOCHE&CORNETTI' else 999
+                    
                     cp1.write(f"**{r['prodotto']}** - €{r['prezzo']:.2f}")
+                    
+                    # LOGICA BLOCCO TASTO AGGIUNGI
                     if q > 0:
-                        if cp2.button("AGGIUNGI", key=f"add_{r['prodotto']}"):
+                        if cp2.button("AGGIUNGI", key=f"add_{r['prodotto']}", use_container_width=True):
                             st.session_state.carrello.append({"prodotto": r['prodotto'], "prezzo": r['prezzo']})
                             if r['categoria'] == 'BRIOCHE&CORNETTI': stk[r['prodotto']] -= 1; salva_stock(stk)
                             st.rerun()
-                    else: cp2.error("FINITO")
+                    else:
+                        # Se lo stock è 0, mostriamo solo il testo "ESAURITO"
+                        cp2.markdown("<span class='esaurito-label'>ESAURITO</span>", unsafe_allow_html=True)
