@@ -1,160 +1,104 @@
 import streamlit as st
 import pandas as pd
-import os
-import time
-from datetime import datetime
-import pytz 
-from streamlit_autorefresh import st_autorefresh
+import os, time
 
-# --- CONFIGURAZIONE PAGINA ---
-st.set_page_config(page_title="PAGANOCAFE", page_icon="☕", layout="wide")
+# --- CONFIGURAZIONE ---
+st.set_page_config(page_title="PAGANOCAFE", layout="centered")
 
-# --- CSS PERSONALIZZATO ---
+# CSS per colori e bottoni
 st.markdown("""
     <style>
-    .stApp { background-color: #000000; color: #FFFFFF; }
-    .stButton > button { 
-        width: 100% !important; 
-        border-radius: 10px !important; 
-        font-weight: bold !important; 
-        height: 65px; 
-    }
-    div.stButton > button { background-color: #d4af37; color: black; border: none; }
-    #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
+    .stApp { background-color: #000; color: #fff; }
+    .stButton > button { width: 100%; border-radius: 10px; font-weight: bold; height: 60px; background-color: #d4af37 !important; color: black !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- COSTANTI E FILE ---
-DB_FILE = "ordini_bar_pagano.csv"
-STOCK_FILE = "stock_bar_pagano.csv"
-MENU_FILE = "menu_personalizzato.csv"
+# --- DATABASE (FILE) ---
+def setup_file(name, cols):
+    if not os.path.exists(name) or os.stat(name).st_size == 0:
+        pd.DataFrame(columns=cols).to_csv(name, index=False)
 
-# --- FUNZIONI DI GESTIONE ROBUSTE ---
+setup_file("menu.csv", ["cat", "prod", "prezzo", "stock"])
+setup_file("ordini.csv", ["tavolo", "prod", "prezzo"])
 
-def inizializza():
-    """Crea i file con le intestazioni se non esistono o sono vuoti"""
-    files_config = {
-        DB_FILE: ["id", "tavolo", "prodotto", "prezzo", "stato", "ora"],
-        MENU_FILE: ["categoria", "prodotto", "prezzo"],
-        STOCK_FILE: ["prodotto", "quantita"]
-    }
-    for file, colonne in files_config.items():
-        if not os.path.exists(file) or os.path.getsize(file) == 0:
-            pd.DataFrame(columns=colonne).to_csv(file, index=False)
-
-def carica_sicuro(file, colonne):
-    """Carica un CSV e gestisce l'errore EmptyDataError"""
-    try:
-        if not os.path.exists(file) or os.path.getsize(file) == 0:
-            return pd.DataFrame(columns=colonne)
-        return pd.read_csv(file)
-    except Exception:
-        return pd.DataFrame(columns=colonne)
-
-def carica_ordini():
-    df = carica_sicuro(DB_FILE, ["id", "tavolo", "prodotto", "prezzo", "stato", "ora"])
-    return df.to_dict('records')
-
-def salva_ordini(lista):
-    pd.DataFrame(lista).to_csv(DB_FILE, index=False)
-
-def carica_stock():
-    df = carica_sicuro(STOCK_FILE, ["prodotto", "quantita"])
-    return df.set_index('prodotto')['quantita'].to_dict() if not df.empty else {}
-
-def salva_stock(d):
-    pd.DataFrame(list(d.items()), columns=['prodotto', 'quantita']).to_csv(STOCK_FILE, index=False)
-
-# Inizializza al caricamento
-inizializza()
-
-# --- LOGICA APP ---
-st_autorefresh(interval=5000, key="paganocafe_refresh")
+menu = pd.read_csv("menu.csv")
+ordini = pd.read_csv("ordini.csv")
 ruolo = st.query_params.get("ruolo", "cliente")
 
+# ==========================================
+# BANCONE (?ruolo=banco)
+# ==========================================
 if ruolo == "banco":
-    st.title("📟 PAGANOCAFE - GESTIONE")
-    ordini = carica_ordini()
-    stk = carica_stock()
-    menu_df = carica_sicuro(MENU_FILE, ["categoria", "prodotto", "prezzo"])
-    
-    t1, t2, t3, t4 = st.tabs(["📋 ORDINI", "💰 CASSA", "📦 STOCK", "⚙️ MENU"])
-    
+    st.title("📟 BANCONE PAGANOCAFE")
+    t1, t2, t3 = st.tabs(["ORDINI & CASSA", "CARICO VETRINA", "AGGIUNGI PRODOTTI"])
+
     with t1:
-        if not ordini: st.info("Nessun ordine attivo.")
-        tavoli = sorted(list(set(str(o['tavolo']) for o in ordini)))
-        for t in tavoli:
-            with st.container(border=True):
-                st.write(f"### Tavolo {t}")
-                items = [o for o in ordini if str(o['tavolo']) == t]
-                for r in items:
-                    c1, c2 = st.columns([4,1])
-                    cl = "text-decoration: line-through; color:gray;" if r['stato'] == "SI" else ""
-                    c1.markdown(f"<span style='{cl}'>{r['prodotto']}</span>", unsafe_allow_html=True)
-                    if r['stato'] == "NO" and c2.button("OK", key=f"ok_{r['id']}"):
-                        for o in ordini: 
-                            if o['id'] == r['id']: o['stato'] = "SI"
-                        salva_ordini(ordini); st.rerun()
+        if ordini.empty: st.info("Nessun ordine.")
+        else:
+            for t in ordini['tavolo'].unique():
+                with st.container(border=True):
+                    items = ordini[ordini['tavolo'] == t]
+                    totale = items['prezzo'].sum()
+                    st.subheader(f"Tavolo {t} - Tot: €{totale:.2f}")
+                    st.write(", ".join(items['prod'].tolist()))
+                    if st.button(f"PAGATO / LIBERA {t}", key=f"pay_{t}"):
+                        ordini[ordini['tavolo'] != t].to_csv("ordini.csv", index=False)
+                        st.rerun()
 
     with t2:
-        if not ordini: st.info("Cassa vuota.")
-        tavoli = sorted(list(set(str(o['tavolo']) for o in ordini)))
-        for t in tavoli:
-            items = [o for o in ordini if str(o['tavolo']) == t]
-            tot = sum(float(x['prezzo']) for x in items)
-            if st.button(f"CHIUDI TAVOLO {t}: €{tot:.2f}", key=f"pay_{t}", type="primary"):
-                salva_ordini([o for o in ordini if str(o['tavolo']) != t]); st.rerun()
-
-    with t3:
-        for p, q in stk.items():
+        st.subheader("Rifornimento +1")
+        for i, r in menu.iterrows():
             c1, c2, c3 = st.columns([2,1,1])
-            c1.write(f"**{p}**"); c2.write(f"Qta: {q}")
-            if c3.button("+1", key=f"rif_{p}"):
-                stk[p] += 1; salva_stock(stk); st.rerun()
-
-    with t4:
-        with st.form("add_new"):
-            c_cat = st.text_input("Categoria")
-            c_prod = st.text_input("Nome Prodotto")
-            c_prez = st.number_input("Prezzo", step=0.10)
-            c_mon = st.checkbox("Monitora Stock")
-            if st.form_submit_button("AGGIUNGI"):
-                nuovo = pd.DataFrame([{"categoria": c_cat, "prodotto": c_prod, "prezzo": c_prez}])
-                pd.concat([menu_df, nuovo]).to_csv(MENU_FILE, index=False)
-                if c_mon:
-                    stk[c_prod] = 0; salva_stock(stk)
+            c1.write(r['prod'])
+            c2.write(f"Disp: {r['stock']}")
+            if c3.button("+1", key=f"add_{i}"):
+                menu.at[i, 'stock'] += 1
+                menu.to_csv("menu.csv", index=False)
                 st.rerun()
 
+    with t3:
+        with st.form("new"):
+            c_cat = st.selectbox("Categoria", ["VETRINA", "CAFFETTERIA", "BIBITE"])
+            c_prod = st.text_input("Nome")
+            c_prez = st.number_input("Prezzo", step=0.1)
+            if st.form_submit_button("SALVA"):
+                nuovo = pd.DataFrame([{"cat": c_cat, "prod": c_prod, "prezzo": c_prez, "stock": 0}])
+                pd.concat([menu, nuovo]).to_csv("menu.csv", index=False)
+                st.rerun()
+
+# ==========================================
+# CLIENTE
+# ==========================================
 else:
-    st.markdown("<h1 style='text-align:center; color:#d4af37;'>PAGANOCAFE</h1>", unsafe_allow_html=True)
-    m_df = carica_sicuro(MENU_FILE, ["categoria", "prodotto", "prezzo"])
-    stk = carica_stock()
+    st.title("☕ PAGANOCAFE")
     
-    if m_df.empty:
-        st.warning("Menu non configurato. Accedi come banco per aggiungere prodotti.")
+    if menu.empty:
+        st.warning("Configura prima il menu dal banco!")
     else:
-        tavolo_sel = st.selectbox("Tavolo:", ["---"] + [str(i) for i in range(1, 16)])
-        if tavolo_sel != "---":
-            categoria = st.radio("Categoria:", m_df['categoria'].unique(), horizontal=True)
-            prodotti_cat = m_df[m_df['categoria'] == categoria]
-            for _, row in prodotti_cat.iterrows():
+        # 1. Tavolo a tendina
+        tavolo = st.selectbox("Scegli il tuo tavolo:", ["---"] + [str(i) for i in range(1, 16)])
+        
+        if tavolo != "---":
+            # 2. Categorie
+            cat_scelta = st.radio("Cosa desideri?", menu['cat'].unique(), horizontal=True)
+            st.divider()
+            
+            # 3. Prodotti
+            prod_filtrati = menu[menu['cat'] == cat_scelta]
+            for i, r in prod_filtrati.iterrows():
                 c1, c2 = st.columns([3, 1])
-                nome, prezzo = row['prodotto'], row['prezzo']
-                q_disp = stk.get(nome, 999)
-                c1.markdown(f"**{nome}**\n€ {prezzo:.2f}")
-                if q_disp > 0:
-                    if c2.button("ORDINA", key=f"cl_{nome}"):
-                        if nome in stk:
-                            stk[nome] -= 1
-                            salva_stock(stk)
-                        nuovo_ordine = {
-                            "id": str(time.time()), "tavolo": tavolo_sel, 
-                            "prodotto": nome, "prezzo": prezzo, "stato": "NO",
-                            "ora": datetime.now(pytz.timezone('Europe/Rome')).strftime("%H:%M")
-                        }
-                        ordini_attuali = carica_ordini()
-                        ordini_attuali.append(nuovo_ordine)
-                        salva_ordini(ordini_attuali)
-                        st.success(f"Inviato: {nome}!"); time.sleep(1); st.rerun()
+                c1.write(f"**{r['prod']}**\n€{r['prezzo']:.2f}")
+                
+                if r['stock'] > 0:
+                    if c2.button("ORDINA", key=f"ord_{i}"):
+                        # Salva Ordine
+                        nuovo_o = pd.DataFrame([{"tavolo": tavolo, "prod": r['prod'], "prezzo": r['prezzo']}])
+                        pd.concat([ordini, nuovo_o]).to_csv("ordini.csv", index=False)
+                        # Scala stock
+                        menu.at[i, 'stock'] -= 1
+                        menu.to_csv("menu.csv", index=False)
+                        st.success("Inviato!")
+                        time.sleep(1)
+                        st.rerun()
                 else:
-                    c2.error("ESAURITO")
+                    c2.error("FINITO")
