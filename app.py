@@ -9,20 +9,36 @@ from streamlit_autorefresh import st_autorefresh
 # --- CONFIGURAZIONE PAGINA ---
 st.set_page_config(page_title="PAGANOCAFE", page_icon="☕", layout="wide")
 
-# --- CSS STILE PREMIUM ---
+# --- CSS STILE PREMIUM CON STATO TAVOLI ---
 st.markdown("""
     <style>
     .stApp { background-color: #121417; color: #FFFFFF; }
     .stButton > button { border-radius: 8px !important; font-weight: bold !important; }
+    
+    /* Tavolo Libero (Grigio/Scuro) */
+    .stButton > button.tavolo-libero {
+        background-color: #1E2127 !important;
+        color: white !important;
+        border: 1px solid #d4af37 !important;
+        height: 70px !important;
+    }
+    
+    /* Tavolo Occupato (Rosso) */
+    .stButton > button.tavolo-occupato {
+        background-color: #FF4B4B !important;
+        color: white !important;
+        border: none !important;
+        height: 70px !important;
+        animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+        0% { opacity: 1; }
+        50% { opacity: 0.8; }
+        100% { opacity: 1; }
+    }
+
     .stButton > button[kind="primary"] { background-color: #d4af37 !important; color: black !important; border: none !important; }
-    .stButton > button[kind="secondary"] { background-color: #2E7D32 !important; color: white !important; border: none !important; }
-    .quantita-display { 
-        font-size: 20px; font-weight: bold; color: #00FF00; 
-        text-align: center; background-color: #1E2127; padding: 5px; border-radius: 5px;
-    }
-    .tavolo-card {
-        background-color: #1E2127; padding: 15px; border-radius: 12px; border: 1px solid #333; margin-bottom: 15px;
-    }
     .esaurito-label {
         color: #FF4B4B; font-weight: bold; text-align: center; border: 1px solid #FF4B4B;
         padding: 5px; border-radius: 8px; display: block;
@@ -85,22 +101,21 @@ if admin_mode:
         cols = st.columns(3)
         for idx, t in enumerate(tavoli_aperti):
             with cols[idx % 3]:
-                st.markdown(f"<div class='tavolo-card'>", unsafe_allow_html=True)
-                st.subheader(f"Tavolo {t}")
-                items = [o for o in ordini_attuali if str(o['tavolo']) == t]
-                for r in items:
-                    c1, c2, c3 = st.columns([1, 4, 1])
-                    if c1.button("❌", key=f"del_{r['id_univoco']}"):
-                        salva_ordini([o for o in ordini_attuali if o['id_univoco'] != r['id_univoco']]); st.rerun()
-                    testo_col = "#888" if r['stato'] == "SI" else "#FFF"
-                    c2.markdown(f"<span style='color:{testo_col}'>{r['prodotto']}</span>", unsafe_allow_html=True)
-                    if r['stato'] == "NO":
-                        if c3.button("OK", key=f"ok_{r['id_univoco']}"):
-                            for o in ordini_attuali: 
-                                if o['id_univoco'] == r['id_univoco']: o['stato'] = "SI"
-                            salva_ordini(ordini_attuali); st.rerun()
-                    else: c3.write("✅")
-                st.markdown("</div>", unsafe_allow_html=True)
+                with st.container(border=True):
+                    st.subheader(f"Tavolo {t}")
+                    items = [o for o in ordini_attuali if str(o['tavolo']) == t]
+                    for r in items:
+                        c1, c2, c3 = st.columns([1, 4, 1])
+                        if c1.button("❌", key=f"del_{r['id_univoco']}"):
+                            salva_ordini([o for o in ordini_attuali if o['id_univoco'] != r['id_univoco']]); st.rerun()
+                        testo_col = "#888" if r['stato'] == "SI" else "#FFF"
+                        c2.markdown(f"<span style='color:{testo_col}'>{r['prodotto']}</span>", unsafe_allow_html=True)
+                        if r['stato'] == "NO":
+                            if c3.button("OK", key=f"ok_{r['id_univoco']}"):
+                                for o in ordini_attuali: 
+                                    if o['id_univoco'] == r['id_univoco']: o['stato'] = "SI"
+                                salva_ordini(ordini_attuali); st.rerun()
+                        else: c3.write("✅")
 
     with tab_cassa:
         tavoli_aperti = sorted(list(set(str(o['tavolo']) for o in ordini_attuali)))
@@ -114,6 +129,7 @@ if admin_mode:
                 if c2.button(f"CHIUDI CONTO", key=f"pay_{t}", type="primary"):
                     salva_ordini([o for o in ordini_attuali if str(o['tavolo']) != t]); st.rerun()
 
+    # --- RESTO TABS ADMIN INVARIATE ---
     with tab_vetrina:
         stk = carica_stock()
         brioches = menu_df[menu_df['categoria'] == 'BRIOCHE&CORNETTI']['prodotto'].unique()
@@ -122,9 +138,7 @@ if admin_mode:
             q = stk.get(p, 0)
             if cv[i % 4].button(f"{p} ({q})", key=f"v_{p}", use_container_width=True):
                 stk[p] = q + 1; salva_stock(stk); st.rerun()
-
     with tab_stock:
-        st.subheader("📦 Magazzino Cornetti")
         stk = carica_stock()
         brioches = menu_df[menu_df['categoria'] == 'BRIOCHE&CORNETTI']['prodotto'].unique()
         for p in brioches:
@@ -134,7 +148,6 @@ if admin_mode:
             if c2.button("➖", key=f"m_{p}"): stk[p]=max(0, q-1); salva_stock(stk); st.rerun()
             c3.markdown(f"<div class='quantita-display'>{q}</div>", unsafe_allow_html=True)
             if c4.button("➕", key=f"p_{p}"): stk[p]=q+1; salva_stock(stk); st.rerun()
-
     with tab_menu:
         sub_cat, sub_prod = st.tabs(["📂 CATEGORIE", "🍔 PRODOTTI"])
         with sub_cat:
@@ -176,18 +189,29 @@ if admin_mode:
 else:
     if st.session_state.tavolo_selezionato is None:
         st.markdown("<h3 style='text-align:center;'>SELEZIONA IL TUO TAVOLO</h3>", unsafe_allow_html=True)
+        
+        # Identifichiamo quali tavoli hanno ordini attivi
+        tavoli_occupati = set(str(o['tavolo']) for o in ordini_attuali)
+        
         for riga in range(5):
             cols = st.columns(4)
             for colonna in range(4):
-                numero_tavolo = riga * 4 + colonna + 1
-                if cols[colonna].button(f"{numero_tavolo}", key=f"tav_{numero_tavolo}", use_container_width=True):
-                    st.session_state.tavolo_selezionato = str(numero_tavolo)
+                numero_tavolo = str(riga * 4 + colonna + 1)
+                is_occupato = numero_tavolo in tavoli_occupati
+                
+                # Etichetta e stile dinamico
+                label = f"TAV {numero_tavolo}\n(OCCUPATO)" if is_occupato else f"{numero_tavolo}"
+                css_class = "tavolo-occupato" if is_occupato else "tavolo-libero"
+                
+                # Creazione pulsante con stile dinamico tramite markdown e pulsante nativo
+                if cols[colonna].button(label, key=f"tav_{numero_tavolo}", use_container_width=True, type="secondary" if is_occupato else "primary"):
+                    st.session_state.tavolo_selezionato = numero_tavolo
                     st.rerun()
     
     else:
         c1, c2 = st.columns([4, 1])
         c1.markdown(f"## 🪑 TAVOLO {st.session_state.tavolo_selezionato}")
-        if c2.button("CAMBIA"):
+        if c2.button("CAMBIA TAVOLO"):
             st.session_state.tavolo_selezionato = None
             st.rerun()
 
@@ -200,16 +224,13 @@ else:
                     cc1, cc2 = st.columns([4, 1])
                     cc1.write(f"{it['prodotto']} - €{it['prezzo']:.2f}")
                     if cc2.button("X", key=f"rc_{idx}"):
-                        # Correzione sicurezza stock
-                        if it['prodotto'] in stk: 
-                            stk[it['prodotto']] += 1
-                            salva_stock(stk)
+                        if it['prodotto'] in stk: stk[it['prodotto']] += 1; salva_stock(stk)
                         st.session_state.carrello.pop(idx); st.rerun()
                 if st.button("🚀 INVIA ORDINE AL BAR", type="primary", use_container_width=True):
                     nuovi = ordini_attuali.copy()
                     for it in st.session_state.carrello:
                         nuovi.append({"id_univoco": str(time.time())+it['prodotto'], "tavolo": st.session_state.tavolo_selezionato, "prodotto": it['prodotto'], "prezzo": it['prezzo'], "stato": "NO", "orario": datetime.now().strftime("%H:%M")})
-                    salva_ordini(nuovi); st.session_state.carrello = []; st.success("Ordine Inviato!"); time.sleep(1); st.rerun()
+                    salva_ordini(nuovi); st.session_state.carrello = []; st.success("Inviato!"); time.sleep(1); st.rerun()
 
         if not menu_df.empty:
             cat_sel = st.radio("COSA DESIDERI?", menu_df['categoria'].unique(), horizontal=True)
@@ -218,12 +239,10 @@ else:
                     cp1, cp2 = st.columns([3, 1])
                     q = stk.get(r['prodotto'], 999) if r['categoria'] == 'BRIOCHE&CORNETTI' else 999
                     cp1.write(f"**{r['prodotto']}** - €{r['prezzo']:.2f}")
-                    
                     if q > 0:
                         if cp2.button("AGGIUNGI", key=f"add_{r['prodotto']}", use_container_width=True):
                             st.session_state.carrello.append({"prodotto": r['prodotto'], "prezzo": r['prezzo']})
                             if r['categoria'] == 'BRIOCHE&CORNETTI':
-                                # CORREZIONE: Inizializza se assente prima di scalare
                                 if r['prodotto'] not in stk: stk[r['prodotto']] = 0
                                 stk[r['prodotto']] = max(0, stk[r['prodotto']] - 1)
                                 salva_stock(stk)
