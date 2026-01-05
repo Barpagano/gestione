@@ -9,17 +9,16 @@ from streamlit_autorefresh import st_autorefresh
 # --- CONFIGURAZIONE PAGINA ---
 st.set_page_config(page_title="BAR PAGANO", layout="wide")
 
-# --- CSS PER GRIGLIA 3x5 RISTRETTA E LOGO ---
+# --- CSS PER GRIGLIA 3x5 RISTRETTA E ATTACCATA ---
 st.markdown("""
     <style>
     /* Sfondo nero assoluto */
     .stApp { background-color: #000000; color: #FFFFFF; }
     
-    /* Contenitore per restringere la griglia tavoli (centrata) */
+    /* Contenitore per restringere la griglia tavoli */
     .tavoli-wrapper {
-        max-width: 400px;
+        max-width: 500px;
         margin: 0 auto;
-        padding: 10px;
     }
 
     /* RIMUOVE SPAZI TRA COLONNE E RIGHE */
@@ -36,15 +35,18 @@ st.markdown("""
     /* STILE TASTI TAVOLI */
     .stButton > button {
         width: 100% !important;
-        height: 80px !important; 
+        height: 85px !important; 
         border-radius: 0px !important;
         font-weight: 900 !important;
         font-size: 28px !important;
         margin: 0px !important;
         border: 1px solid #111111 !important;
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
 
-    /* COLORI TAVOLI */
+    /* COLORI */
     .btn-libero div[data-testid="stButton"] > button {
         background-color: #00FF00 !important;
         color: #000000 !important;
@@ -55,14 +57,7 @@ st.markdown("""
         color: #FFFFFF !important;
     }
 
-    /* Logo centrato */
-    .logo-container {
-        display: flex;
-        justify-content: center;
-        padding: 20px 0;
-    }
-
-    /* Nasconde interfacce standard */
+    /* Nasconde elementi Streamlit */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
@@ -72,6 +67,9 @@ st.markdown("""
 # --- LOGICA DATI ---
 DB_FILE = "ordini_bar_pagano.csv"
 MENU_FILE = "menu_personalizzato.csv"
+
+def get_ora():
+    return datetime.now(pytz.timezone('Europe/Rome')).strftime("%H:%M")
 
 def carica_ordini(): 
     try: return pd.read_csv(DB_FILE).to_dict('records')
@@ -85,55 +83,45 @@ ordini = carica_ordini()
 ruolo = st.query_params.get("ruolo", "cliente")
 
 # =========================================================
-# VISUALIZZAZIONE LOGO O TITOLO
-# =========================================================
-st.markdown('<div class="logo-container">', unsafe_allow_html=True)
-if os.path.exists("logo.png"):
-    st.image("logo.png", width=200)
-else:
-    # Se il logo non c'è, mettiamo una scritta bellissima
-    st.markdown("<h1 style='color:#00FF00; font-size:45px; font-family:sans-serif; letter-spacing:-2px; margin:0;'>BAR PAGANO</h1>", unsafe_allow_html=True)
-st.markdown('</div>', unsafe_allow_html=True)
-
-# =========================================================
-# BANCONE (GESTIONE)
+# BANCONE (WIDE MODE OK PER GESTIONE)
 # =========================================================
 if ruolo == "banco":
-    st.markdown("<h2 style='text-align:center;'> Pannello Banco</h2>", unsafe_allow_html=True)
+    st.markdown("<h1 style='color:#00FF00; text-align:center;'>BANCONE GESTIONE</h1>", unsafe_allow_html=True)
     tavoli_attivi = sorted(list(set(str(o['tavolo']) for o in ordini)))
     
     if not tavoli_attivi:
-        st.info("Nessun ordine in attesa")
+        st.info("Nessuna comanda attiva")
     else:
         for t in tavoli_attivi:
             with st.container(border=True):
-                st.write(f"### Tavolo {t}")
+                st.write(f"### 🪑 Tavolo {t}")
                 items = [o for o in ordini if str(o['tavolo']) == t]
                 totale = sum(float(o['prezzo']) for o in items)
                 for r in items:
                     c1, c2 = st.columns([4, 1])
-                    cl = "text-decoration: line-through; color: #555;" if r['stato'] == "SI" else "color: white;"
+                    cl = "text-decoration: line-through; color: gray;" if r['stato'] == "SI" else "color: white;"
                     c1.markdown(f"<span style='{cl}'>{r['prodotto']}</span>", unsafe_allow_html=True)
                     if r['stato'] == "NO" and c2.button("OK", key=f"ok_{r['id']}"):
                         for o in ordini: 
                             if o['id'] == r['id']: o['stato'] = "SI"
                         salva_ordini(ordini); st.rerun()
-                if st.button(f"CHIUDI CONTO {t}", key=f"pay_{t}", type="primary", use_container_width=True):
+                if st.button(f"CHIUDI CONTO {t}", key=f"pay_{t}", type="primary"):
                     salva_ordini([o for o in ordini if str(o['tavolo']) != t]); st.rerun()
 
 # =========================================================
-# CLIENTE (GRIGLIA TAVOLI 3x5 RISTRETTA)
+# CLIENTE (RISTRETTO / NO WIDE SELEZIONE TAVOLI)
 # =========================================================
 else:
     if 'tavolo' not in st.session_state: st.session_state.tavolo = None
     if 'carrello' not in st.session_state: st.session_state.carrello = []
 
     if st.session_state.tavolo is None:
-        st.markdown("<p style='text-align:center; color:#888;'>SELEZIONA IL TAVOLO</p>", unsafe_allow_html=True)
+        st.markdown("<h1 style='color:#00FF00; text-align:center;'>BAR PAGANO</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center; font-weight:bold;'>TOCCA IL TUO TAVOLO</p>", unsafe_allow_html=True)
         
         occupati = set(str(o['tavolo']) for o in ordini)
         
-        # GRIGLIA COMPATTA AL CENTRO
+        # Inizio area ristretta per i tavoli
         st.markdown('<div class="tavoli-wrapper">', unsafe_allow_html=True)
         for riga in range(3):
             cols = st.columns(5)
@@ -148,16 +136,16 @@ else:
                         st.session_state.tavolo = n
                         st.rerun()
                     st.markdown('</div>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True) # Fine area ristretta
     else:
-        # INTERFACCIA MENU
-        st.markdown(f"<div style='background-color:#00FF00; color:black; text-align:center; padding:12px; font-weight:bold; font-size:22px;'>TAVOLO {st.session_state.tavolo}</div>", unsafe_allow_html=True)
-        if st.button("⬅️ CAMBIA TAVOLO", use_container_width=True):
+        # MENU ORDINAZIONE
+        st.markdown(f"<div style='background-color:#00FF00; color:black; text-align:center; padding:10px; font-weight:bold; font-size:22px;'>TAVOLO {st.session_state.tavolo}</div>", unsafe_allow_html=True)
+        if st.button("⬅️ TORNA AI TAVOLI", use_container_width=True):
             st.session_state.tavolo = None; st.rerun()
         
         if os.path.exists(MENU_FILE):
             menu_df = pd.read_csv(MENU_FILE)
-            cat = st.radio("Categoria:", sorted(menu_df['categoria'].unique()), horizontal=True)
+            cat = st.radio("Scegli:", sorted(menu_df['categoria'].unique()), horizontal=True)
             for _, r in menu_df[menu_df['categoria'] == cat].iterrows():
                 c1, c2 = st.columns([3, 1])
                 c1.markdown(f"**{r['prodotto']}**\n€{r['prezzo']:.2f}")
@@ -169,7 +157,7 @@ else:
             tot = sum(i['prezzo'] for i in st.session_state.carrello)
             st.write(f"### TOTALE: €{tot:.2f}")
             if st.button("🚀 INVIA ORDINE ORA", type="primary", use_container_width=True):
-                ora = datetime.now(pytz.timezone('Europe/Rome')).strftime("%H:%M")
+                ora = get_ora()
                 for item in st.session_state.carrello:
                     ordini.append({
                         "id": f"{time.time()}_{item['prodotto']}",
