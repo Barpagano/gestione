@@ -19,10 +19,11 @@ st.markdown("""
         font-size: 18px !important; font-weight: bold !important; color: #00FF00 !important; 
         text-align: center; background-color: #1E2127; padding: 5px; border-radius: 5px; border: 1px solid #333;
     }
+    .carrello-box {
+        background-color: #1E2127; padding: 15px; border-radius: 10px; border: 2px solid #d4af37; margin-bottom: 20px;
+    }
     .servito { color: #555555 !important; text-decoration: line-through; opacity: 0.6; }
     .da-servire { color: #FFFFFF !important; font-weight: bold; }
-    /* Pulsante annulla ordine cliente */
-    .btn-annulla { background-color: #ff4b4b !important; color: white !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -57,10 +58,15 @@ menu_df = carica_menu()
 ordini_attuali = carica_ordini()
 admin_mode = st.query_params.get("admin") == "si"
 
+# Inizializzazione carrello temporaneo nella sessione
+if "carrello" not in st.session_state:
+    st.session_state.carrello = []
+
 if admin_mode:
+    # --- PARTE BANCONE (IDENTICA A PRIMA) ---
     st.title("☕ PAGANOCAFE - Gestione")
     tab_ordini, tab_cassa, tab_vetrina, tab_stock, tab_menu = st.tabs(["📋 ORDINI", "💰 CASSA", "⚡ VETRINA", "📦 STOCK", "⚙️ MENU"])
-
+    # ... (Il codice del bancone rimane lo stesso per brevità, focalizziamoci sul cliente)
     with tab_ordini:
         tavoli = sorted(list(set(str(o['tavolo']) for o in ordini_attuali)))
         cols = st.columns(4)
@@ -79,7 +85,6 @@ if admin_mode:
                             for o in ordini_attuali: 
                                 if o['id_univoco'] == r['id_univoco']: o['stato'] = "SI"
                             salva_ordini(ordini_attuali); st.rerun()
-
     with tab_cassa:
         tavoli = sorted(list(set(str(o['tavolo']) for o in ordini_attuali)))
         for t in tavoli:
@@ -90,14 +95,12 @@ if admin_mode:
                 c1.write(f"**Tavolo {t}** - €{totale:.2f}")
                 if c2.button(f"CHIUDI {t}", key=f"pay_{t}"):
                     salva_ordini([o for o in ordini_attuali if str(o['tavolo']) != t]); st.rerun()
-
     with tab_vetrina:
         stk = carica_stock()
         cv = st.columns(6)
         for i, (p, q) in enumerate(stk.items()):
             if cv[i % 6].button(f"{p} ({q})", key=f"vr_{p}"):
                 stk[p] += 1; salva_stock(stk); st.rerun()
-
     with tab_stock:
         stk = carica_stock()
         for p, q in stk.items():
@@ -106,7 +109,6 @@ if admin_mode:
             if c2.button("➖", key=f"m_{p}"): stk[p]=max(0, q-1); salva_stock(stk); st.rerun()
             c3.markdown(f"<div class='quantita-display'>{q}</div>", unsafe_allow_html=True)
             if c4.button("➕", key=f"p_{p}"): stk[p]=q+1; salva_stock(stk); st.rerun()
-
     with tab_menu:
         st.subheader("➕ Aggiungi")
         with st.form("new_prod"):
@@ -123,42 +125,97 @@ if admin_mode:
                 menu_df.drop(i).to_csv(MENU_FILE, index=False); st.rerun()
 
 # ==========================================
-# SEZIONE CLIENTE
+# SEZIONE CLIENTE (CON REVISIONE ORDINE)
 # ==========================================
 else:
     st.markdown("<h1 style='text-align:center;'>🥐 PAGANOCAFE</h1>", unsafe_allow_html=True)
-    tavolo_sel = st.selectbox("Seleziona Tavolo:", ["---"] + [str(i) for i in range(1, 21)])
+    tavolo_sel = st.selectbox("Seleziona il tuo Tavolo:", ["---"] + [str(i) for i in range(1, 21)])
     
     if tavolo_sel != "---":
         stk = carica_stock()
-        # --- TABELLA ORDINI ATTIVI DEL CLIENTE (ANNULLAMENTO) ---
-        miei_ordini = [o for o in ordini_attuali if str(o['tavolo']) == tavolo_sel and o['stato'] == "NO"]
-        if miei_ordini:
-            with st.expander("🛒 I tuoi ordini in preparazione (Tocca ❌ per annullare)", expanded=True):
-                for mo in miei_ordini:
-                    cx1, cx2 = st.columns([4, 1])
-                    cx1.write(f"{mo['prodotto']} (€{mo['prezzo']:.2f})")
-                    if cx2.button("❌", key=f"annulla_{mo['id_univoco']}"):
-                        # 1. Ripristino Stock se monitorato
-                        if mo['prodotto'] in stk:
-                            stk[mo['prodotto']] += 1
-                            salva_stock(stk)
-                        # 2. Rimuovo l'ordine
-                        nuovi_ordini = [o for o in ordini_attuali if o['id_univoco'] != mo['id_univoco']]
-                        salva_ordini(nuovi_ordini)
-                        st.rerun()
 
-        # --- SELEZIONE PRODOTTI ---
+        # --- 1. CARRELLO DI REVISIONE ---
+        if st.session_state.carrello:
+            st.markdown(f"<div class='carrello-box'>", unsafe_allow_html=True)
+            st.subheader(f"📝 Revisione Ordine - Tavolo {tavolo_sel}")
+            
+            tot_provvisorio = 0
+            for idx, item in enumerate(st.session_state.carrello):
+                col_n, col_p, col_del = st.columns([3, 1, 1])
+                col_n.write(f"• {item['prodotto']}")
+                col_p.write(f"€{item['prezzo']:.2f}")
+                if col_del.button("Rimuovi", key=f"rem_temp_{idx}"):
+                    st.session_state.carrello.pop(idx)
+                    st.rerun()
+                tot_provvisorio += item['prezzo']
+            
+            st.divider()
+            st.write(f"**TOTALE DA INVIARE: €{tot_provvisorio:.2f}**")
+            
+            col_invio, col_svuota = st.columns(2)
+            if col_invio.button("✅ INVIA ORDINE AL BANCO", type="primary", use_container_width=True):
+                # Trasferiamo gli ordini dal carrello al database
+                nuovi_da_salvare = ordini_attuali.copy()
+                ora = datetime.now(pytz.timezone('Europe/Rome')).strftime("%H:%M")
+                
+                for item in st.session_state.carrello:
+                    nuovo_o = {
+                        "id_univoco": f"{time.time()}_{item['prodotto']}",
+                        "tavolo": tavolo_sel,
+                        "prodotto": item['prodotto'],
+                        "prezzo": item['prezzo'],
+                        "stato": "NO",
+                        "orario": ora
+                    }
+                    nuovi_da_salvare.append(nuovo_o)
+                
+                salva_ordini(nuovi_da_salvare)
+                st.session_state.carrello = [] # Svuota carrello
+                st.success("Ordine inviato con successo!")
+                time.sleep(1)
+                st.rerun()
+            
+            if col_svuota.button("🗑️ Svuota tutto"):
+                st.session_state.carrello = []
+                st.rerun()
+            
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        # --- 2. SELEZIONE PRODOTTI ---
+        st.subheader("🍽️ Scegli i prodotti:")
         if not menu_df.empty:
-            scelta = st.radio("Scegli:", menu_df['categoria'].unique(), horizontal=True)
+            cat_list = menu_df['categoria'].unique()
+            scelta = st.radio("Categoria:", cat_list, horizontal=True)
+            
             for _, r in menu_df[menu_df['categoria'] == scelta].iterrows():
                 c1, c2 = st.columns([3, 1])
                 q = stk.get(r['prodotto'], 999)
+                
                 c1.write(f"**{r['prodotto']}** - €{r['prezzo']:.2f}")
-                if q > 0:
-                    if c2.button("ORDINA", key=f"ord_{r['prodotto']}"):
-                        if r['prodotto'] in stk: stk[r['prodotto']] -= 1; salva_stock(stk)
-                        nuovo = {"id_univoco": str(time.time()), "tavolo": tavolo_sel, "prodotto": r['prodotto'], "prezzo": r['prezzo'], "stato": "NO", "orario": datetime.now(pytz.timezone('Europe/Rome')).strftime("%H:%M")}
-                        ordini_attuali.append(nuovo); salva_ordini(ordini_attuali)
+                
+                # Verifica se il prodotto è già stato "prenotato" nel carrello per scalare lo stock visivo
+                nel_carrello = len([i for i in st.session_state.carrello if i['prodotto'] == r['prodotto']])
+                q_effettiva = q - nel_carrello
+
+                if q_effettiva > 0:
+                    if c2.button("AGGIUNGI", key=f"add_car_{r['prodotto']}"):
+                        # Aggiunge al carrello temporaneo (non ancora al DB)
+                        st.session_state.carrello.append({
+                            "prodotto": r['prodotto'],
+                            "prezzo": r['prezzo']
+                        })
+                        # Per i prodotti dello stock (vetrina), scaliamo lo stock reale SUBITO 
+                        # per evitare che altri clienti ordinino la stessa cosa mentre io sto decidendo
+                        if r['prodotto'] in stk:
+                            stk[r['prodotto']] -= 1
+                            salva_stock(stk)
                         st.rerun()
-                else: c2.error("FINITO")
+                else:
+                    c2.error("ESAURITO")
+        
+        # --- 3. ORDINI GIÀ IN PREPARAZIONE (Storico) ---
+        miei_in_corso = [o for o in ordini_attuali if str(o['tavolo']) == tavolo_sel]
+        if miei_in_corso:
+            with st.expander("🕒 Stato dei tuoi ordini precedenti"):
+                for mo in miei_in_corso:
+                    st.write(f"{'✅' if mo['stato']=='SI' else '⏳'} {mo['prodotto']} - {mo['orario']}")
