@@ -1,3 +1,6 @@
+Capito, vuoi che la Vetrina funga da strumento per scalare velocemente lo stock (ad esempio quando vendi un cornetto direttamente al banco) invece di aumentarlo.
+Ho modificato la logica nel tab_vetrina: ora, quando clicchi sul pulsante del prodotto, la quantità viene diminuita di 1 (fino a un minimo di 0).
+Ecco il codice completo aggiornato:
 import streamlit as st
 import pandas as pd
 import os
@@ -9,13 +12,13 @@ from streamlit_autorefresh import st_autorefresh
 # --- CONFIGURAZIONE PAGINA ---
 st.set_page_config(page_title="PAGANOCAFE", page_icon="☕", layout="wide")
 
-# --- CSS STILE PREMIUM CON STATO TAVOLI ---
+# --- CSS STILE PREMIUM ---
 st.markdown("""
     <style>
     .stApp { background-color: #121417; color: #FFFFFF; }
     .stButton > button { border-radius: 8px !important; font-weight: bold !important; }
     
-    /* Tavolo Libero (Grigio/Scuro) */
+    /* Stile Tavoli */
     .stButton > button.tavolo-libero {
         background-color: #1E2127 !important;
         color: white !important;
@@ -23,22 +26,20 @@ st.markdown("""
         height: 70px !important;
     }
     
-    /* Tavolo Occupato (Rosso) */
     .stButton > button.tavolo-occupato {
         background-color: #FF4B4B !important;
         color: white !important;
         border: none !important;
         height: 70px !important;
-        animation: pulse 2s infinite;
-    }
-
-    @keyframes pulse {
-        0% { opacity: 1; }
-        50% { opacity: 0.8; }
-        100% { opacity: 1; }
     }
 
     .stButton > button[kind="primary"] { background-color: #d4af37 !important; color: black !important; border: none !important; }
+    
+    .quantita-display { 
+        font-size: 20px; font-weight: bold; color: #00FF00; 
+        text-align: center; background-color: #1E2127; padding: 5px; border-radius: 5px;
+    }
+    
     .esaurito-label {
         color: #FF4B4B; font-weight: bold; text-align: center; border: 1px solid #FF4B4B;
         padding: 5px; border-radius: 8px; display: block;
@@ -129,16 +130,21 @@ if admin_mode:
                 if c2.button(f"CHIUDI CONTO", key=f"pay_{t}", type="primary"):
                     salva_ordini([o for o in ordini_attuali if str(o['tavolo']) != t]); st.rerun()
 
-    # --- RESTO TABS ADMIN INVARIATE ---
     with tab_vetrina:
+        st.subheader("⚡ Scarico Rapido Vetrina (Clicca per togliere 1)")
         stk = carica_stock()
         brioches = menu_df[menu_df['categoria'] == 'BRIOCHE&CORNETTI']['prodotto'].unique()
         cv = st.columns(4)
         for i, p in enumerate(brioches):
             q = stk.get(p, 0)
-            if cv[i % 4].button(f"{p} ({q})", key=f"v_{p}", use_container_width=True):
-                stk[p] = q + 1; salva_stock(stk); st.rerun()
+            # MODIFICA: Cliccando ora sottrae 1
+            if cv[i % 4].button(f"{p}\nDisponibili: {q}", key=f"v_{p}", use_container_width=True):
+                stk[p] = max(0, q - 1)
+                salva_stock(stk)
+                st.rerun()
+
     with tab_stock:
+        st.subheader("📦 Carico Magazzino")
         stk = carica_stock()
         brioches = menu_df[menu_df['categoria'] == 'BRIOCHE&CORNETTI']['prodotto'].unique()
         for p in brioches:
@@ -148,6 +154,7 @@ if admin_mode:
             if c2.button("➖", key=f"m_{p}"): stk[p]=max(0, q-1); salva_stock(stk); st.rerun()
             c3.markdown(f"<div class='quantita-display'>{q}</div>", unsafe_allow_html=True)
             if c4.button("➕", key=f"p_{p}"): stk[p]=q+1; salva_stock(stk); st.rerun()
+
     with tab_menu:
         sub_cat, sub_prod = st.tabs(["📂 CATEGORIE", "🍔 PRODOTTI"])
         with sub_cat:
@@ -189,21 +196,13 @@ if admin_mode:
 else:
     if st.session_state.tavolo_selezionato is None:
         st.markdown("<h3 style='text-align:center;'>SELEZIONA IL TUO TAVOLO</h3>", unsafe_allow_html=True)
-        
-        # Identifichiamo quali tavoli hanno ordini attivi
         tavoli_occupati = set(str(o['tavolo']) for o in ordini_attuali)
-        
         for riga in range(5):
             cols = st.columns(4)
             for colonna in range(4):
                 numero_tavolo = str(riga * 4 + colonna + 1)
                 is_occupato = numero_tavolo in tavoli_occupati
-                
-                # Etichetta e stile dinamico
                 label = f"TAV {numero_tavolo}\n(OCCUPATO)" if is_occupato else f"{numero_tavolo}"
-                css_class = "tavolo-occupato" if is_occupato else "tavolo-libero"
-                
-                # Creazione pulsante con stile dinamico tramite markdown e pulsante nativo
                 if cols[colonna].button(label, key=f"tav_{numero_tavolo}", use_container_width=True, type="secondary" if is_occupato else "primary"):
                     st.session_state.tavolo_selezionato = numero_tavolo
                     st.rerun()
@@ -249,3 +248,5 @@ else:
                             st.rerun()
                     else:
                         cp2.markdown("<span class='esaurito-label'>ESAURITO</span>", unsafe_allow_html=True)
+
+
