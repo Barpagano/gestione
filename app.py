@@ -1,169 +1,100 @@
 import streamlit as st
 import pandas as pd
-import os
-import time
+import os, time
 from datetime import datetime
-import pytz 
-from streamlit_autorefresh import st_autorefresh
 
-# --- CONFIGURAZIONE PAGINA ---
+# 1. Configurazione Base
 st.set_page_config(page_title="BAR PAGANO", layout="wide")
 
-# --- CSS PER GRIGLIA 3x5 RISTRETTA E ATTACCATA ---
+# 2. CSS Essenziale (Solo per la griglia 5 colonne)
 st.markdown("""
     <style>
-    /* Sfondo nero assoluto */
     .stApp { background-color: #000000; color: #FFFFFF; }
-    
-    /* Contenitore per restringere la griglia tavoli */
-    .tavoli-wrapper {
-        max-width: 500px;
-        margin: 0 auto;
+    /* Forza 5 colonne su smartphone */
+    [data-testid="stHorizontalBlock"] { display: flex !important; flex-wrap: nowrap !important; gap: 2px !important; }
+    [data-testid="column"] { flex: 1 !important; min-width: 0px !important; }
+    /* Tasti Tavoli */
+    .stButton > button { 
+        width: 100% !important; height: 80px !important; 
+        background-color: #00FF00 !important; color: black !important;
+        font-weight: bold; font-size: 20px !important; border-radius: 5px !important;
     }
-
-    /* RIMUOVE SPAZI TRA COLONNE E RIGHE */
-    [data-testid="stHorizontalBlock"] {
-        gap: 0px !important;
-        margin-bottom: 0px !important;
-    }
-    
-    [data-testid="column"] {
-        padding: 0px !important;
-        margin: 0px !important;
-    }
-
-    /* STILE TASTI TAVOLI */
-    .stButton > button {
-        width: 100% !important;
-        height: 85px !important; 
-        border-radius: 0px !important;
-        font-weight: 900 !important;
-        font-size: 28px !important;
-        margin: 0px !important;
-        border: 1px solid #111111 !important;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    /* COLORI */
-    .btn-libero div[data-testid="stButton"] > button {
-        background-color: #00FF00 !important;
-        color: #000000 !important;
-    }
-
-    .btn-occupato div[data-testid="stButton"] > button {
-        background-color: #FF0000 !important;
-        color: #FFFFFF !important;
-    }
-
-    /* Nasconde elementi Streamlit */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
+    .stButton > button:disabled { background-color: #FF0000 !important; color: white !important; opacity: 1; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- LOGICA DATI ---
-DB_FILE = "ordini_bar_pagano.csv"
-MENU_FILE = "menu_personalizzato.csv"
+# 3. Gestione File
+if not os.path.exists("menu.csv"):
+    pd.DataFrame([{"prod": "Cornetto", "prezzo": 1.2, "stock": 10}]).to_csv("menu.csv", index=False)
+if not os.path.exists("ordini.csv"):
+    pd.DataFrame(columns=["tavolo", "prod", "ora"]).to_csv("ordini.csv", index=False)
 
-def get_ora():
-    return datetime.now(pytz.timezone('Europe/Rome')).strftime("%H:%M")
+menu = pd.read_csv("menu.csv")
+ordini = pd.read_csv("ordini.csv")
 
-def carica_ordini(): 
-    try: return pd.read_csv(DB_FILE).to_dict('records')
-    except: return []
-
-def salva_ordini(lista): 
-    pd.DataFrame(lista if lista else [], columns=["id", "tavolo", "prodotto", "prezzo", "stato", "ora"]).to_csv(DB_FILE, index=False)
-
-st_autorefresh(interval=5000, key="refresh_global")
-ordini = carica_ordini()
+# 4. Logica Ruoli
 ruolo = st.query_params.get("ruolo", "cliente")
 
-# =========================================================
-# BANCONE (WIDE MODE OK PER GESTIONE)
-# =========================================================
+# --- VISTA BANCO ---
 if ruolo == "banco":
-    st.markdown("<h1 style='color:#00FF00; text-align:center;'>BANCONE GESTIONE</h1>", unsafe_allow_html=True)
-    tavoli_attivi = sorted(list(set(str(o['tavolo']) for o in ordini)))
+    st.title("BANCO - ORDINI")
+    if st.button("Svuota Tutti gli Ordini"):
+        pd.DataFrame(columns=["tavolo", "prod", "ora"]).to_csv("ordini.csv", index=False)
+        st.rerun()
+    st.table(ordini)
     
-    if not tavoli_attivi:
-        st.info("Nessuna comanda attiva")
-    else:
-        for t in tavoli_attivi:
-            with st.container(border=True):
-                st.write(f"### 🪑 Tavolo {t}")
-                items = [o for o in ordini if str(o['tavolo']) == t]
-                totale = sum(float(o['prezzo']) for o in items)
-                for r in items:
-                    c1, c2 = st.columns([4, 1])
-                    cl = "text-decoration: line-through; color: gray;" if r['stato'] == "SI" else "color: white;"
-                    c1.markdown(f"<span style='{cl}'>{r['prodotto']}</span>", unsafe_allow_html=True)
-                    if r['stato'] == "NO" and c2.button("OK", key=f"ok_{r['id']}"):
-                        for o in ordini: 
-                            if o['id'] == r['id']: o['stato'] = "SI"
-                        salva_ordini(ordini); st.rerun()
-                if st.button(f"CHIUDI CONTO {t}", key=f"pay_{t}", type="primary"):
-                    salva_ordini([o for o in ordini if str(o['tavolo']) != t]); st.rerun()
+    st.divider()
+    st.write("### Rifornimento Vetrina")
+    for i, row in menu.iterrows():
+        c1, c2 = st.columns(2)
+        c1.write(f"{row['prod']} (Disp: {row['stock']})")
+        if c2.button(f"Aggiungi 10 {row['prod']}", key=f"add_{i}"):
+            menu.at[i, 'stock'] += 10
+            menu.to_csv("menu.csv", index=False)
+            st.rerun()
 
-# =========================================================
-# CLIENTE (RISTRETTO / NO WIDE SELEZIONE TAVOLI)
-# =========================================================
+# --- VISTA CLIENTE ---
 else:
-    if 'tavolo' not in st.session_state: st.session_state.tavolo = None
-    if 'carrello' not in st.session_state: st.session_state.carrello = []
+    st.markdown("<h1 style='text-align:center; color:#00FF00;'>BAR PAGANO</h1>", unsafe_allow_html=True)
+    
+    if 'tav' not in st.session_state:
+        st.session_state.tav = None
 
-    if st.session_state.tavolo is None:
-        st.markdown("<h1 style='color:#00FF00; text-align:center;'>BAR PAGANO</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align:center; font-weight:bold;'>TOCCA IL TUO TAVOLO</p>", unsafe_allow_html=True)
+    if st.session_state.tav is None:
+        st.write("Scegli il tavolo:")
+        occupati = ordini['tavolo'].astype(str).tolist()
         
-        occupati = set(str(o['tavolo']) for o in ordini)
-        
-        # Inizio area ristretta per i tavoli
-        st.markdown('<div class="tavoli-wrapper">', unsafe_allow_html=True)
-        for riga in range(3):
+        # Griglia 3 righe x 5 colonne
+        for r in range(3):
             cols = st.columns(5)
-            for colonna in range(5):
-                n = str((riga * 5) + colonna + 1)
+            for c in range(5):
+                n = str((r * 5) + c + 1)
                 is_occ = n in occupati
-                classe = "btn-occupato" if is_occ else "btn-libero"
-                
-                with cols[colonna]:
-                    st.markdown(f'<div class="{classe}">', unsafe_allow_html=True)
-                    if st.button(n, key=f"t_{n}", disabled=is_occ):
-                        st.session_state.tavolo = n
-                        st.rerun()
-                    st.markdown('</div>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True) # Fine area ristretta
+                if cols[c].button(n, key=f"btn_{n}", disabled=is_occ):
+                    st.session_state.tav = n
+                    st.rerun()
     else:
-        # MENU ORDINAZIONE
-        st.markdown(f"<div style='background-color:#00FF00; color:black; text-align:center; padding:10px; font-weight:bold; font-size:22px;'>TAVOLO {st.session_state.tavolo}</div>", unsafe_allow_html=True)
-        if st.button("⬅️ TORNA AI TAVOLI", use_container_width=True):
-            st.session_state.tavolo = None; st.rerun()
-        
-        if os.path.exists(MENU_FILE):
-            menu_df = pd.read_csv(MENU_FILE)
-            cat = st.radio("Scegli:", sorted(menu_df['categoria'].unique()), horizontal=True)
-            for _, r in menu_df[menu_df['categoria'] == cat].iterrows():
-                c1, c2 = st.columns([3, 1])
-                c1.markdown(f"**{r['prodotto']}**\n€{r['prezzo']:.2f}")
-                if c2.button("➕", key=f"add_{r['prodotto']}"):
-                    st.session_state.carrello.append(r.to_dict()); st.rerun()
-
-        if st.session_state.carrello:
-            st.divider()
-            tot = sum(i['prezzo'] for i in st.session_state.carrello)
-            st.write(f"### TOTALE: €{tot:.2f}")
-            if st.button("🚀 INVIA ORDINE ORA", type="primary", use_container_width=True):
-                ora = get_ora()
-                for item in st.session_state.carrello:
-                    ordini.append({
-                        "id": f"{time.time()}_{item['prodotto']}",
-                        "tavolo": st.session_state.tavolo, "prodotto": item['prodotto'],
-                        "prezzo": item['prezzo'], "stato": "NO", "ora": ora
-                    })
-                salva_ordini(ordini)
-                st.session_state.carrello = []
-                st.success("Ordine Inviato!"); time.sleep(1); st.rerun()
+        st.write(f"### Tavolo {st.session_state.tav}")
+        if st.button("Torna indietro"):
+            st.session_state.tav = None
+            st.rerun()
+            
+        st.divider()
+        for i, row in menu.iterrows():
+            c1, c2 = st.columns([3, 1])
+            disponibile = row['stock'] > 0
+            c1.write(f"**{row['prod']}** - €{row['prezzo']}")
+            
+            if disponibile:
+                if c2.button("Ordina", key=f"buy_{i}"):
+                    # Salva Ordine
+                    nuovo_ordine = pd.DataFrame([{"tavolo": st.session_state.tav, "prod": row['prod'], "ora": time.strftime("%H:%M")}])
+                    pd.concat([ordini, nuovo_ordine]).to_csv("ordini.csv", index=False)
+                    # Scala Stock
+                    menu.at[i, 'stock'] -= 1
+                    menu.to_csv("menu.csv", index=False)
+                    st.success("Ordinato!")
+                    time.sleep(1)
+                    st.rerun()
+            else:
+                c2.write("FINITO")
