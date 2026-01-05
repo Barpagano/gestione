@@ -9,48 +9,53 @@ from streamlit_autorefresh import st_autorefresh
 # --- CONFIGURAZIONE PAGINA ---
 st.set_page_config(page_title="BAR PAGANO", layout="wide")
 
-# --- CSS PER TASTI AFFIANCATI E ATTACCATI ---
+# --- CSS PER GRIGLIA TAVOLI 5x3 (OTTIMIZZATA PER SMARTPHONE) ---
 st.markdown("""
     <style>
     .stApp { background-color: #000000; color: #FFFFFF; }
     
-    /* AZZERA SPAZI TRA COLONNE E RIGHE */
+    /* FORZA 5 COLONNE AFFIANCATE ANCHE SU MOBILE */
     [data-testid="stHorizontalBlock"] {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
         gap: 0px !important;
         margin-bottom: 0px !important;
     }
     
     [data-testid="column"] {
+        flex: 1 1 0% !important;
+        min-width: 0px !important; /* Impedisce che vadano a capo */
         padding: 0px !important;
         margin: 0px !important;
     }
 
-    /* TASTI TAVOLI: Quadrati e uniti */
+    /* TASTI TAVOLI: Grandi e baciati */
     .stButton > button {
         width: 100% !important;
-        height: 100px !important; 
+        height: 90px !important; 
         border-radius: 0px !important;
         font-weight: 900 !important;
-        font-size: 32px !important;
+        font-size: 28px !important;
         margin: 0px !important;
-        border: 1px solid #111111 !important;
+        border: 0.5px solid #111111 !important;
     }
 
-    /* COLORI */
+    /* COLORI TAVOLI */
     .btn-libero div[data-testid="stButton"] > button { background-color: #00FF00 !important; color: #000000 !important; }
     .btn-occupato div[data-testid="stButton"] > button { background-color: #FF0000 !important; color: #FFFFFF !important; }
 
-    .logo-container { display: flex; justify-content: center; padding: 10px 0; }
+    .logo-container { text-align: center; padding: 10px 0; }
     #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
     </style>
     """, unsafe_allow_html=True)
 
-# --- INIZIALIZZAZIONE FILE ---
+# --- INIZIALIZZAZIONE ---
 DB_FILE = "ordini_bar_pagano.csv"
 MENU_FILE = "menu_personalizzato.csv"
 STOCK_FILE = "stock_bar_pagano.csv"
 
-def inizializza_sistema():
+def inizializza():
     if not os.path.exists(MENU_FILE):
         pd.DataFrame([{"categoria": "VETRINA", "prodotto": "Cornetto", "prezzo": 1.20}]).to_csv(MENU_FILE, index=False)
     if not os.path.exists(DB_FILE):
@@ -58,7 +63,7 @@ def inizializza_sistema():
     if not os.path.exists(STOCK_FILE):
         pd.DataFrame(columns=["prodotto", "quantita"]).to_csv(STOCK_FILE, index=False)
 
-inizializza_sistema()
+inizializza()
 
 # --- FUNZIONI DATI ---
 def carica_menu(): return pd.read_csv(MENU_FILE)
@@ -80,9 +85,9 @@ ordini = carica_ordini()
 stock = carica_stock()
 ruolo = st.query_params.get("ruolo", "cliente")
 
-# --- HEADER ---
+# --- LOGO/HEADER ---
 st.markdown('<div class="logo-container">', unsafe_allow_html=True)
-if os.path.exists("logo.png"): st.image("logo.png", width=150)
+if os.path.exists("logo.png"): st.image("logo.png", width=140)
 else: st.markdown("<h1 style='color:#00FF00; font-size:35px; margin:0;'>BAR PAGANO</h1>", unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
@@ -105,15 +110,13 @@ if ruolo == "banco":
                         for o in ordini: 
                             if o['id'] == r['id']: o['stato'] = "SI"
                         salva_ordini(ordini); st.rerun()
-                if st.button(f"LIBERA TAVOLO {t}", key=f"lib_{t}", type="primary", use_container_width=True):
+                if st.button(f"LIBERA {t}", key=f"lib_{t}", type="primary", use_container_width=True):
                     salva_ordini([o for o in ordini if str(o['tavolo']) != t]); st.rerun()
     with t2:
         m_df = carica_menu()
         p_sel = st.selectbox("Monitora prodotto:", m_df['prodotto'].unique())
         if st.button("Aggiungi"):
-            chiave = p_sel.strip().lower()
-            if chiave not in stock: stock[chiave] = 0
-            salva_stock(stock); st.rerun()
+            stk = carica_stock(); stk[p_sel.strip().lower()] = 0; salva_stock(stk); st.rerun()
         for pk, q in list(stock.items()):
             c1, c2, c3, c4 = st.columns([3, 1, 1, 1])
             c1.write(f"**{pk.upper()}**")
@@ -122,45 +125,48 @@ if ruolo == "banco":
             if c4.button("➕", key=f"p_{pk}"): stock[pk]=q+1; salva_stock(stock); st.rerun()
     with t3:
         n_prod = st.text_input("Nome Prodotto")
-        n_prezzo = st.number_input("Prezzo", step=0.10)
-        if st.button("Aggiungi al Menu"):
+        n_pre = st.number_input("Prezzo", step=0.10)
+        if st.button("Salva"):
             m_df = carica_menu()
-            m_df = pd.concat([m_df, pd.DataFrame([{"categoria": "VETRINA", "prodotto": n_prod, "prezzo": n_prezzo}])], ignore_index=True)
+            m_df = pd.concat([m_df, pd.DataFrame([{"categoria": "VETRINA", "prodotto": n_prod, "prezzo": n_pre}])], ignore_index=True)
             salva_menu(m_df); st.rerun()
 
 # =========================================================
-# CLIENTE (SELEZIONE TAVOLI AFFIANCATI)
+# CLIENTE (INTERFACCIA SMARTPHONE)
 # =========================================================
 else:
     if 'tavolo' not in st.session_state: st.session_state.tavolo = None
     if 'carrello' not in st.session_state: st.session_state.carrello = []
 
     if st.session_state.tavolo is None:
+        st.markdown("<p style='text-align:center; color:#888; margin-bottom:5px;'>SELEZIONA TAVOLO</p>", unsafe_allow_html=True)
         occupati = set(str(o['tavolo']) for o in ordini)
-        # 3 Righe da 5 Colonne (Totale 15)
+        
+        # Genera 3 file da 5 colonne
         for riga in range(3):
             cols = st.columns(5)
-            for colonna in range(5):
-                n = str((riga * 5) + colonna + 1)
+            for col in range(5):
+                n = str((riga * 5) + col + 1)
                 cl = "btn-occupato" if n in occupati else "btn-libero"
-                with cols[colonna]:
+                with cols[col]:
                     st.markdown(f'<div class="{cl}">', unsafe_allow_html=True)
                     if st.button(n, key=f"t_{n}", disabled=(n in occupati)):
                         st.session_state.tavolo = n; st.rerun()
                     st.markdown('</div>', unsafe_allow_html=True)
     else:
+        # MENU PRODOTTI
         st.markdown(f"<div style='background-color:#00FF00; color:black; text-align:center; padding:10px; font-weight:bold;'>TAVOLO {st.session_state.tavolo}</div>", unsafe_allow_html=True)
         if st.button("⬅️ CAMBIA TAVOLO", use_container_width=True): st.session_state.tavolo = None; st.rerun()
         
         m_df = carica_menu()
         for _, r in m_df.iterrows():
-            nome_p = str(r['prodotto']).strip().lower()
-            q_disp = stock.get(nome_p, 999) 
+            pk = str(r['prodotto']).strip().lower()
+            q_disp = stock.get(pk, 999)
             c1, c2 = st.columns([3, 1])
-            testo = f"**{r['prodotto']}** - €{r['prezzo']:.2f}"
-            if q_disp <= 0: testo += " (ESAURITO ❌)"
+            testo = f"**{r['prodotto']}**\n€{r['prezzo']:.2f}"
+            if q_disp <= 0: testo += " (FINE ❌)"
             c1.markdown(testo)
-            if c2.button("➕", key=f"add_{nome_p}", disabled=(q_disp <= 0)):
+            if c2.button("➕", key=f"add_{pk}", disabled=(q_disp <= 0)):
                 st.session_state.carrello.append(r.to_dict()); st.rerun()
 
         if st.session_state.carrello:
