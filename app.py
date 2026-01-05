@@ -60,7 +60,6 @@ menu_df = carica_menu()
 ordini_attuali = carica_ordini()
 admin_mode = st.query_params.get("admin") == "si"
 
-# Inizializzazione variabili di sessione
 if "carrello" not in st.session_state: st.session_state.carrello = []
 if "nuove_categorie" not in st.session_state: st.session_state.nuove_categorie = []
 
@@ -83,7 +82,6 @@ if admin_mode:
                         c1, c2, c3 = st.columns([0.6, 3, 1])
                         if c1.button("❌", key=f"del_o_{r['id_univoco']}"):
                             salva_ordini([o for o in ordini_attuali if o['id_univoco'] != r['id_univoco']]); st.rerun()
-                        cl = "servito" if r['stato'] == "SI" else ""
                         c2.write(f"{r['prodotto']}")
                         if r['stato'] == "NO" and c3.button("Ok", key=f"ok_o_{r['id_univoco']}"):
                             for o in ordini_attuali: 
@@ -101,6 +99,21 @@ if admin_mode:
                 if c2.button(f"CHIUDI {t}", key=f"pay_{t}"):
                     salva_ordini([o for o in ordini_attuali if str(o['tavolo']) != t]); st.rerun()
 
+    with tab_vetrina:
+        st.subheader("⚡ Carico Rapido Vetrina")
+        stk = carica_stock()
+        brioches = menu_df[menu_df['categoria'] == 'BRIOCHE&CORNETTI']['prodotto'].unique()
+        if len(brioches) == 0:
+            st.info("Nessun prodotto in 'BRIOCHE&CORNETTI'. Aggiungili nel tab MENU.")
+        else:
+            cv = st.columns(4)
+            for i, p in enumerate(brioches):
+                q = stk.get(p, 0)
+                if cv[i % 4].button(f"{p} ({q})", key=f"vr_btn_{p}"):
+                    stk[p] = q + 1
+                    salva_stock(stk)
+                    st.rerun()
+
     with tab_stock:
         st.subheader("📦 Stock BRIOCHE&CORNETTI")
         stk = carica_stock()
@@ -116,13 +129,9 @@ if admin_mode:
 
     with tab_menu:
         sub_cat, sub_prod = st.tabs(["📂 CATEGORIE", "🍔 PRODOTTI"])
-
         with sub_cat:
-            st.subheader("Gestione Categorie")
-            # Uniamo categorie salvate e categorie create in sessione
             cats_nel_file = menu_df['categoria'].unique().tolist() if not menu_df.empty else []
             tutte_le_cats = sorted(list(set(cats_nel_file + st.session_state.nuove_categorie)))
-            
             for cat in tutte_le_cats:
                 with st.container(border=True):
                     col1, col2, col3 = st.columns([3, 1, 1])
@@ -131,32 +140,24 @@ if admin_mode:
                         if not menu_df.empty:
                             menu_df.loc[menu_df['categoria'] == cat, 'categoria'] = nuovo_nome.upper().strip()
                             salva_menu(menu_df)
-                        # Aggiorna anche in sessione
                         if cat in st.session_state.nuove_categorie:
                             idx = st.session_state.nuove_categorie.index(cat)
                             st.session_state.nuove_categorie[idx] = nuovo_nome.upper().strip()
-                        st.success("Modificato!"); time.sleep(0.5); st.rerun()
+                        st.rerun()
                     if col3.button("ELIMINA", key=f"del_cat_{cat}"):
                         menu_df = menu_df[menu_df['categoria'] != cat]
                         salva_menu(menu_df)
                         if cat in st.session_state.nuove_categorie: st.session_state.nuove_categorie.remove(cat)
                         st.rerun()
-            
             st.divider()
-            new_cat = st.text_input("Crea Nuova Categoria (es: APERITIVI)")
+            new_cat = st.text_input("Nuova Categoria")
             if st.button("CREA CATEGORIA") and new_cat:
-                nome_pulito = new_cat.upper().strip()
-                if nome_pulito not in tutte_le_cats:
-                    st.session_state.nuove_categorie.append(nome_pulito)
-                    st.success(f"Categoria {nome_pulito} creata! Ora aggiungi un prodotto.")
-                    st.rerun()
+                st.session_state.nuove_categorie.append(new_cat.upper().strip())
+                st.rerun()
 
         with sub_prod:
-            st.subheader("➕ Aggiungi Prodotto")
-            # Lista dinamica per il selectbox
             cats_per_prodotto = sorted(list(set(cats_nel_file + st.session_state.nuove_categorie)))
             if not cats_per_prodotto: cats_per_prodotto = ["BRIOCHE&CORNETTI"]
-
             with st.form("new_prod_form"):
                 c1, c2, c3 = st.columns(3)
                 f_cat = c1.selectbox("Categoria", cats_per_prodotto)
@@ -167,7 +168,6 @@ if admin_mode:
                         nuovo = pd.DataFrame([{"categoria": f_cat, "prodotto": f_prod.strip(), "prezzo": f_prez}])
                         salva_menu(pd.concat([menu_df, nuovo]))
                         st.rerun()
-
             st.divider()
             for i, r in menu_df.iterrows():
                 with st.container(border=True):
@@ -186,8 +186,7 @@ if admin_mode:
 # ==========================================
 else:
     st.markdown("<h1 style='text-align:center;'>🥐 PAGANOCAFE</h1>", unsafe_allow_html=True)
-    tavolo_sel = st.selectbox("Seleziona Tavolo:", ["---"] + [str(i) for i in range(1, 21)])
-    
+    tavolo_sel = st.selectbox("Tavolo:", ["---"] + [str(i) for i in range(1, 21)])
     if tavolo_sel != "---":
         stk = carica_stock()
         if st.session_state.carrello:
@@ -209,10 +208,8 @@ else:
             st.markdown("</div>", unsafe_allow_html=True)
 
         if not menu_df.empty:
-            categorie_visibili = menu_df['categoria'].unique()
-            scelta = st.radio("Scegli Categoria:", categorie_visibili, horizontal=True)
+            scelta = st.radio("Scegli Categoria:", menu_df['categoria'].unique(), horizontal=True)
             st.markdown(f"<div class='categoria-header'>{scelta}</div>", unsafe_allow_html=True)
-            
             for _, r in menu_df[menu_df['categoria'] == scelta].iterrows():
                 c1, c2 = st.columns([3, 1])
                 q = stk.get(r['prodotto'], 999) if r['categoria'] == 'BRIOCHE&CORNETTI' else 999
@@ -222,4 +219,4 @@ else:
                         st.session_state.carrello.append({"prodotto": r['prodotto'], "prezzo": r['prezzo']})
                         if r['categoria'] == 'BRIOCHE&CORNETTI': stk[r['prodotto']] -= 1; salva_stock(stk)
                         st.rerun()
-                else: c2.error("ESAURITO")
+                else: c2.error("FINITO")
