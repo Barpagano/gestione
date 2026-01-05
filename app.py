@@ -16,13 +16,25 @@ st.markdown("""
     .stApp { background-color: #0E1117; color: #FFFFFF; }
     div[data-testid="column"] button { width: 100% !important; border-radius: 12px !important; }
     .stButton > button { height: 70px; font-weight: bold; background-color: #d4af37; color: black; }
+    
+    /* Stile specifico per i numeri nello Stock */
+    .quantita-display { 
+        font-size: 24px !important; 
+        font-weight: bold !important; 
+        color: #00FF00 !important; /* Verde acceso per contrasto */
+        text-align: center;
+        background-color: #1E2127;
+        padding: 10px;
+        border-radius: 10px;
+        border: 1px solid #333;
+    }
+    
     .servito { color: #555555 !important; text-decoration: line-through; opacity: 0.6; }
     .da-servire { color: #FFFFFF !important; font-weight: bold; }
-    .prezzo-cassa { color: #4CAF50; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- GESTIONE DATABASE (PULIZIA ERRORI) ---
+# --- GESTIONE DATABASE ---
 DB_FILE = "ordini_bar_pagano.csv"
 STOCK_FILE = "stock_bar_pagano.csv"
 MENU_FILE = "menu_personalizzato.csv"
@@ -113,15 +125,28 @@ if admin_mode:
 
     with tab_stock:
         stk = carica_stock()
+        st.subheader("📦 Gestione Quantità")
         with st.expander("Aggiungi prodotto da monitorare"):
             p_sel = st.selectbox("Scegli dal menu", menu_df['prodotto'].unique()) if not menu_df.empty else None
             if st.button("AGGIUNGI") and p_sel:
                 stk[p_sel] = 0; salva_stock(stk); st.rerun()
+        
+        st.write("---")
         for p, q in stk.items():
-            c1, c2, c3 = st.columns([3, 1, 1])
-            c1.write(f"**{p}** (Disp: {q})")
-            if c2.button("➖", key=f"m_{p}"): stk[p]=max(0, q-1); salva_stock(stk); st.rerun()
-            if c3.button("➕", key=f"p_{p}"): stk[p]=q+1; salva_stock(stk); st.rerun()
+            col1, col_meno, col_num, col_piu = st.columns([3, 1, 1, 1])
+            col1.write(f"### {p}")
+            
+            # Tasto Meno
+            if col_meno.button("➖", key=f"m_{p}"):
+                stk[p] = max(0, q - 1); salva_stock(stk); st.rerun()
+            
+            # Numero Centrale (CON CONTRASTO)
+            col_num.markdown(f"<div class='quantita-display'>{q}</div>", unsafe_allow_html=True)
+            
+            # Tasto Più
+            if col_piu.button("➕", key=f"p_{p}"):
+                stk[p] = q + 1; salva_stock(stk); st.rerun()
+            st.write("---")
 
     with tab_menu:
         with st.form("new"):
