@@ -14,37 +14,46 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- CSS PERSONALIZZATO ---
+# --- CSS PERSONALIZZATO (Ottimizzato per Smartphone) ---
 st.markdown("""
     <style>
     .stApp { background-color: #0E1117; color: #FFFFFF; }
+    
+    /* Bottoni Generali */
     div[data-testid="column"] button {
         width: 100% !important;
         font-weight: bold !important;
         border-radius: 12px !important;
     }
+
+    /* TASTI TAVOLI CLIENTE (Contrasto elevato per mobile) */
+    .btn-tavolo > div[data-testid="stButton"] > button {
+        background-color: #E0E0E0 !important; /* Grigio chiaro */
+        color: #000000 !important;           /* Testo Nero */
+        height: 80px !important;
+        font-size: 24px !important;
+        border: 3px solid #4CAF50 !important; /* Bordo verde per stacco */
+        margin-bottom: 10px;
+    }
+    
+    /* Stile Ordini nel Banco */
     .servito { color: #555555 !important; text-decoration: line-through; opacity: 0.6; font-style: italic; }
     .da-servire { color: #FFFFFF !important; font-weight: bold; font-size: 16px; }
     
-    /* Stile per il tasto chiusura tavolo (BANCO) */
+    /* TASTO CHIUDI TAVOLO (BANCO) */
     div.stButton > button[kind="primary"] {
         background-color: #D32F2F !important;
+        color: white !important;
+        height: 60px !important;
         margin-top: 10px;
-    }
-    
-    /* Stile per i tavoli del cliente */
-    .btn-tavolo > div[data-testid="stButton"] > button {
-        background-color: #1E1E1E !important;
-        height: 70px !important;
-        font-size: 20px !important;
     }
 
     /* Tasto elimina nel carrello cliente */
     .btn-del-cart > div[data-testid="stButton"] > button {
         background-color: transparent !important;
         color: #FF5252 !important;
-        border: none !important;
-        font-size: 18px !important;
+        border: 1px solid #FF5252 !important;
+        font-size: 16px !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -82,31 +91,27 @@ def carica_stock():
     return df.set_index('prodotto')['quantita'].to_dict() if not df.empty else {}
 def salva_stock(d): pd.DataFrame(list(d.items()), columns=['prodotto', 'quantita']).to_csv(STOCK_FILE, index=False)
 
-# Caricamento dati
 menu_df = carica_menu()
 ordini_attuali = carica_ordini()
 
-# --- LOGICA DI REFRESH ---
+# --- REFRESH ---
 st_autorefresh(interval=5000, key="global_refresh")
-
 if "ultimo_count" not in st.session_state: st.session_state.ultimo_count = len(ordini_attuali)
 if len(ordini_attuali) > st.session_state.ultimo_count:
     suona_notifica()
 st.session_state.ultimo_count = len(ordini_attuali)
 
-# --- DISTINZIONE RUOLI ---
 ruolo = st.query_params.get("ruolo", "cliente")
 
 # =========================================================
-# SCHERMATA GESTIONE (BANCO)
+# BANCONE (RUOLO=BANCO)
 # =========================================================
 if ruolo == "banco":
-    st.title("👨‍🍳 BAR PAGANO - Gestione Unificata")
+    st.title("👨‍🍳 BAR PAGANO - Gestione")
     tab_ordini, tab_vetrina, tab_stock, tab_menu = st.tabs(["📋 ORDINI E CASSA", "⚡ VETRINA", "📦 STOCK", "⚙️ MENU"])
 
     with tab_ordini:
-        if not ordini_attuali: 
-            st.info("In attesa di nuovi ordini...")
+        if not ordini_attuali: st.info("In attesa...")
         else:
             tavoli_attivi = sorted(list(set(str(o['tavolo']) for o in ordini_attuali)))
             cols = st.columns(3)
@@ -115,9 +120,8 @@ if ruolo == "banco":
                     with st.container(border=True):
                         st.subheader(f"🪑 Tavolo {t}")
                         items = [o for o in ordini_attuali if str(o['tavolo']) == str(t)]
-                        totale_tavolo = 0
+                        tot = sum(float(o['prezzo']) for o in items)
                         for r in items:
-                            totale_tavolo += float(r['prezzo'])
                             c1, c2 = st.columns([3, 1])
                             cl = "servito" if r['stato'] == "SI" else "da-servire"
                             c1.markdown(f"<span class='{cl}'>[{r.get('orario','')}] {r['prodotto']}</span>", unsafe_allow_html=True)
@@ -126,10 +130,9 @@ if ruolo == "banco":
                                     if o['id_univoco'] == r['id_univoco']: o['stato'] = "SI"
                                 salva_ordini(ordini_attuali); st.rerun()
                         st.divider()
-                        st.write(f"**Totale: €{totale_tavolo:.2f}**")
+                        st.write(f"**Totale: €{tot:.2f}**")
                         if st.button(f"CHIUDI TAVOLO E PAGA", key=f"chiudi_{t}", type="primary"):
-                            salva_ordini([o for o in ordini_attuali if str(o['tavolo']) != str(t)])
-                            st.rerun()
+                            salva_ordini([o for o in ordini_attuali if str(o['tavolo']) != str(t)]); st.rerun()
 
     with tab_vetrina:
         stk = carica_stock()
@@ -140,19 +143,12 @@ if ruolo == "banco":
 
     with tab_stock:
         stk = carica_stock()
-        with st.expander("➕ Monitora nuovo prodotto"):
-            if not menu_df.empty:
-                c1, c2 = st.columns(2)
-                cat_stk = c1.selectbox("Categoria", sorted(menu_df['categoria'].unique()))
-                nuovo_s = c2.selectbox("Prodotto", menu_df[menu_df['categoria'] == cat_stk]['prodotto'].unique())
-                if st.button("AGGIUNGI"):
-                    if nuovo_s not in stk: stk[nuovo_s] = 0; salva_stock(stk); st.rerun()
         for p, q in stk.items():
             cx, cm, cq, cp, cd = st.columns([3, 1, 1, 1, 1])
             cx.write(f"**{p}**")
-            if cm.button("➖", key=f"sm_{p}"): stk[p] = max(0, q-1); salva_stock(stk); st.rerun()
+            if cm.button("➖", key=f"sm_{p}"): stk[p]=max(0,q-1); salva_stock(stk); st.rerun()
             cq.write(f"**{q}**")
-            if cp.button("➕", key=f"sp_{p}"): stk[p] = q+1; salva_stock(stk); st.rerun()
+            if cp.button("➕", key=f"sp_{p}"): stk[p]=q+1; salva_stock(stk); st.rerun()
             if cd.button("🗑️", key=f"sdel_{p}"): del stk[p]; salva_stock(stk); st.rerun()
 
     with tab_menu:
@@ -160,75 +156,60 @@ if ruolo == "banco":
             c1, c2 = st.columns(2)
             cat_e = c1.selectbox("Categoria", ["---"] + sorted(list(menu_df['categoria'].unique())) if not menu_df.empty else ["---"])
             cat_n = c2.text_input("Nuova Categoria")
-            nome_n = st.text_input("Nome")
-            prez_n = st.number_input("Prezzo", min_value=0.0, step=0.1)
+            nome_n, prez_n = st.text_input("Nome"), st.number_input("Prezzo", step=0.1)
             if st.form_submit_button("AGGIUNGI"):
                 cat_f = cat_n if cat_n.strip() != "" else cat_e
                 if cat_f != "---" and nome_n:
-                    nuovo = pd.DataFrame([{"categoria": cat_f, "prodotto": nome_n, "prezzo": prez_n}])
-                    pd.concat([menu_df, nuovo], ignore_index=True).to_csv(MENU_FILE, index=False); st.rerun()
+                    pd.concat([menu_df, pd.DataFrame([{"categoria": cat_f, "prodotto": nome_n, "prezzo": prez_n}])], ignore_index=True).to_csv(MENU_FILE, index=False); st.rerun()
 
 # =========================================================
-# SCHERMATA CLIENTE (CON ELIMINA NEL CARRELLO)
+# CLIENTE (STILE TAVOLI CHIARI PER MOBILE)
 # =========================================================
 else:
-    st.title("☕ BENVENUTI AL BAR PAGANO")
+    st.title("☕ BAR PAGANO")
     if 'tavolo' not in st.session_state: st.session_state.tavolo = None
     if 'carrello' not in st.session_state: st.session_state.carrello = []
 
     if st.session_state.tavolo is None:
-        st.subheader("Seleziona il tuo tavolo:")
-        for i in range(0, 15, 5):
-            cols = st.columns(5)
-            for j in range(5):
+        st.subheader("Scegli il tuo Tavolo:")
+        # Griglia 3x5 per smartphone per rendere i tasti più grandi
+        for i in range(0, 15, 3):
+            cols = st.columns(3)
+            for j in range(3):
                 n = i + j + 1
-                st.markdown('<div class="btn-tavolo">', unsafe_allow_html=True)
-                if cols[j].button(f"Tavolo {n}", key=f"t_{n}"):
-                    st.session_state.tavolo = str(n); st.rerun()
-                st.markdown('</div>', unsafe_allow_html=True)
+                if n <= 15:
+                    st.markdown('<div class="btn-tavolo">', unsafe_allow_html=True)
+                    if cols[j].button(f"{n}", key=f"t_{n}"):
+                        st.session_state.tavolo = str(n); st.rerun()
+                    st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.success(f"📍 Tavolo {st.session_state.tavolo}")
         if st.button("⬅️ CAMBIA TAVOLO"): st.session_state.tavolo = None; st.rerun()
         
         if not menu_df.empty:
-            categorie = sorted(menu_df['categoria'].unique())
-            scelta = st.radio("Scegli Categoria:", categorie, horizontal=True)
-            prodotti_cat = menu_df[menu_df['categoria'] == scelta]
-            for _, row in prodotti_cat.iterrows():
+            cat = st.radio("Menu:", sorted(menu_df['categoria'].unique()), horizontal=True)
+            for _, r in menu_df[menu_df['categoria'] == cat].iterrows():
                 c1, c2 = st.columns([3, 1])
-                c1.write(f"**{row['prodotto']}** - €{row['prezzo']:.2f}")
-                if c2.button("Aggiungi", key=f"add_{row['prodotto']}"):
-                    # Aggiungo un ID temporaneo per poterlo eliminare singolarmente
-                    item = row.to_dict()
-                    item['temp_id'] = time.time() 
-                    st.session_state.carrello.append(item)
-                    st.rerun()
+                c1.write(f"**{r['prodotto']}** - €{r['prezzo']:.2f}")
+                if c2.button("➕", key=f"add_{r['prodotto']}"):
+                    item = r.to_dict(); item['temp_id'] = time.time()
+                    st.session_state.carrello.append(item); st.rerun()
 
         if st.session_state.carrello:
             st.divider()
-            st.subheader("🛒 Riepilogo Ordine (clicca ❌ per rimuovere)")
+            st.subheader("🛒 Tuo Ordine:")
             tot = 0
-            # Visualizzazione carrello con tasto elimina
             for i, item in enumerate(st.session_state.carrello):
                 tot += item['prezzo']
-                col_nome, col_elimina = st.columns([4, 1])
-                col_nome.write(f"{item['prodotto']} (€{item['prezzo']:.2f})")
+                col_n, col_e = st.columns([4, 1])
+                col_n.write(f"{item['prodotto']} (€{item['prezzo']:.2f})")
                 st.markdown('<div class="btn-del-cart">', unsafe_allow_html=True)
-                if col_elimina.button("❌", key=f"remove_{i}_{item['temp_id']}"):
-                    st.session_state.carrello.pop(i)
-                    st.rerun()
+                if col_e.button("❌", key=f"rm_{i}_{item['temp_id']}"):
+                    st.session_state.carrello.pop(i); st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
             
             st.write(f"### Totale: €{tot:.2f}")
             if st.button(f"🚀 INVIA ORDINE", type="primary", use_container_width=True):
-                ora = get_ora_italiana()
                 for item in st.session_state.carrello:
-                    ordini_attuali.append({
-                        "id_univoco": f"{time.time()}_{item['prodotto']}",
-                        "tavolo": st.session_state.tavolo, "prodotto": item['prodotto'],
-                        "prezzo": item['prezzo'], "stato": "NO", "orario": ora
-                    })
-                salva_ordini(ordini_attuali)
-                st.session_state.carrello = []
-                st.success("Ordine inviato!")
-                time.sleep(1); st.rerun()
+                    ordini_attuali.append({"id_univoco": f"{time.time()}_{item['prodotto']}", "tavolo": st.session_state.tavolo, "prodotto": item['prodotto'], "prezzo": item['prezzo'], "stato": "NO", "orario": get_ora_italiana()})
+                salva_ordini(ordini_attuali); st.session_state.carrello = []; st.success("Inviato!"); time.sleep(1); st.rerun()
