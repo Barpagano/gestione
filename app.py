@@ -100,37 +100,49 @@ if admin_mode:
 
     with tab_vetrina:
         stk = carica_stock()
+        # Filtriamo lo stock per mostrare solo Brioche nella vetrina veloce
+        prod_vetrina = menu_df[menu_df['categoria'] == 'BRIOCHE&CORNETTI']['prodotto'].unique()
         cv = st.columns(6)
-        for i, (p, q) in enumerate(stk.items()):
+        for i, p in enumerate(prod_vetrina):
+            q = stk.get(p, 0)
             if cv[i % 6].button(f"{p} ({q})", key=f"vr_{p}"):
-                stk[p] += 1; salva_stock(stk); st.rerun()
+                stk[p] = q + 1; salva_stock(stk); st.rerun()
 
     with tab_stock:
+        st.subheader("📦 Gestione Scorte BRIOCHE & CORNETTI")
         stk = carica_stock()
-        st.subheader("📦 Monitoraggio Scorte")
-        with st.expander("Aggiungi prodotto dal menu allo Stock"):
-            p_sel = st.selectbox("Seleziona Prodotto", menu_df['prodotto'].unique()) if not menu_df.empty else None
-            if st.button("ABILITA MONITORAGGIO") and p_sel:
-                if p_sel not in stk: stk[p_sel] = 0; salva_stock(stk); st.rerun()
         
-        st.write("---")
-        for p, q in stk.items():
-            c1, c2, c3, c4 = st.columns([3, 1, 1, 1])
-            c1.write(f"**{p}**")
-            if c2.button("➖", key=f"m_stk_{p}"): 
-                stk[p]=max(0, q-1); salva_stock(stk); st.rerun()
-            c3.markdown(f"<div class='quantita-display'>{q}</div>", unsafe_allow_html=True)
-            if c4.button("➕", key=f"p_stk_{p}"): 
-                stk[p]=q+1; salva_stock(stk); st.rerun()
-            st.write("---")
+        # Filtra automaticamente i prodotti dal menu che appartengono alla categoria corretta
+        brioches = menu_df[menu_df['categoria'] == 'BRIOCHE&CORNETTI']['prodotto'].unique()
+        
+        if len(brioches) == 0:
+            st.info("Nessun prodotto trovato nella categoria 'BRIOCHE&CORNETTI'. Aggiungili nel tab MENU.")
+        else:
+            for p in brioches:
+                # Assicuriamoci che il prodotto sia presente nel file stock
+                if p not in stk:
+                    stk[p] = 0
+                    salva_stock(stk)
+                
+                q = stk[p]
+                c1, c2, c3, c4 = st.columns([3, 1, 1, 1])
+                c1.write(f"**{p}**")
+                if c2.button("➖", key=f"m_stk_{p}"): 
+                    stk[p]=max(0, q-1); salva_stock(stk); st.rerun()
+                c3.markdown(f"<div class='quantita-display'>{q}</div>", unsafe_allow_html=True)
+                if c4.button("➕", key=f"p_stk_{p}"): 
+                    stk[p]=q+1; salva_stock(stk); st.rerun()
+                st.write("---")
 
     with tab_menu:
         st.subheader("➕ Aggiungi al Listino")
         with st.form("new_prod"):
             c1, c2, c3 = st.columns(3)
-            f_cat, f_prod, f_prez = c1.text_input("Categoria"), c2.text_input("Nome"), c3.number_input("Prezzo (€)", step=0.1)
+            f_cat = c1.text_input("Categoria (es: BRIOCHE&CORNETTI)")
+            f_prod = c2.text_input("Nome Prodotto")
+            f_prez = c3.number_input("Prezzo (€)", step=0.1)
             if st.form_submit_button("AGGIUNGI"):
-                nuovo = pd.DataFrame([{"categoria": f_cat.upper(), "prodotto": f_prod, "prezzo": f_prez}])
+                nuovo = pd.DataFrame([{"categoria": f_cat.upper().strip(), "prodotto": f_prod.strip(), "prezzo": f_prez}])
                 pd.concat([menu_df, nuovo]).to_csv(MENU_FILE, index=False); st.rerun()
         st.divider()
         for i, r in menu_df.iterrows():
@@ -158,7 +170,7 @@ else:
                 col_n.write(f"• {item['prodotto']}")
                 col_p.write(f"€{item['prezzo']:.2f}")
                 if col_del.button("Rimuovi", key=f"rem_temp_{idx}"):
-                    if item['prodotto'] in stk: # Se rimosso dal carrello, torna nello stock
+                    if item['prodotto'] in stk: 
                         stk[item['prodotto']] += 1
                         salva_stock(stk)
                     st.session_state.carrello.pop(idx)
@@ -188,16 +200,24 @@ else:
             st.markdown("</div>", unsafe_allow_html=True)
 
         if not menu_df.empty:
-            scelta = st.radio("Scegli Categoria:", menu_df['categoria'].unique(), horizontal=True)
+            cat_list = menu_df['categoria'].unique()
+            scelta = st.radio("Scegli Categoria:", cat_list, horizontal=True)
             for _, r in menu_df[menu_df['categoria'] == scelta].iterrows():
                 c1, c2 = st.columns([3, 1])
-                q = stk.get(r['prodotto'], 999)
-                c1.write(f"**{r['prodotto']}** - €{r['prezzo']:.2f}")
-                if q > 0:
-                    if c2.button("AGGIUNGI", key=f"add_car_{r['prodotto']}"):
-                        st.session_state.carrello.append({"prodotto": r['prodotto'], "prezzo": r['prezzo']})
-                        if r['prodotto'] in stk:
+                # Controllo stock solo se il prodotto è monitorato (categoria BRIOCHE&CORNETTI)
+                if r['categoria'] == 'BRIOCHE&CORNETTI':
+                    q = stk.get(r['prodotto'], 0)
+                    c1.write(f"**{r['prodotto']}** - €{r['prezzo']:.2f} (Disponibili: {q})")
+                    if q > 0:
+                        if c2.button("AGGIUNGI", key=f"add_car_{r['prodotto']}"):
+                            st.session_state.carrello.append({"prodotto": r['prodotto'], "prezzo": r['prezzo']})
                             stk[r['prodotto']] -= 1
                             salva_stock(stk)
+                            st.rerun()
+                    else: c2.error("ESAURITO")
+                else:
+                    # Per le altre categorie (es: caffè) lo stock è infinito
+                    c1.write(f"**{r['prodotto']}** - €{r['prezzo']:.2f}")
+                    if c2.button("AGGIUNGI", key=f"add_car_{r['prodotto']}"):
+                        st.session_state.carrello.append({"prodotto": r['prodotto'], "prezzo": r['prezzo']})
                         st.rerun()
-                else: c2.error("ESAURITO")
